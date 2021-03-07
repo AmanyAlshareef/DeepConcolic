@@ -38,6 +38,28 @@ def validate_inttuplearg (v, s):
   raise ValueError ('Invalid value for argument `{}\': expected tuple of ints'
                     .format (v))
 
+# ---
+
+def parse_positive_int (s):
+  try:
+    i = int (s)
+    if i <= 0:
+      raise ValueError
+    return i
+  except ValueError:
+    raise ValueError (f'Expected strictly positive Integer (got `{s}\')')
+
+def parse_positive_int_or_float_ratio (s):
+  try:
+    try:
+      return parse_positive_int (s)
+    except ValueError:
+      f = float (s)
+      if f <= 0. or f >= 1.:
+        raise ValueError
+      return f
+  except ValueError:
+    raise ValueError (f'Expected strictly positive Integer or ratio in ]0,1[ (got `{s}\')')
 
 # ---
 

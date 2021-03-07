@@ -129,6 +129,8 @@ def layer_transform_options (li, feats = None, default = 1):
   if feats is not None:
     if isinstance (feats, (int, float)):
       return feats
+    if isinstance (feats, Callable):
+      return feats (li)
     if isinstance (feats, str):
       return builtins.eval(feats, {})(li)
     if isinstance (feats, dict) and li in feats:
@@ -187,6 +189,103 @@ def flayer_setup (l, i, feats = None, **kwds):
   return FLayer (layer = l, layer_index = i,
                  transform = fext, skip = skip, focus = focus)
 
+# ---
+
+spec_parser0 = parse.compile ('{tech}({args}){suffix}')
+spec_parser1 = parse.compile ('{tech}(){suffix}')
+# spec_parser2 = parse.compile ('{tech}')
+def _parse_dimred_str (s):
+  s = s.strip ()
+  if s == '': return ()
+  ss = s.partition (':')
+  sss = ss[0] + ' '
+  cur = \
+    spec_parser0.parse (sss) or \
+    spec_parser1.parse (sss) or \
+    dict (tech = ss[0])
+  if 'suffix' in cur:
+    suff = cur['suffix'].strip ()
+    if suff != '':
+      raise ValueError (f'Invalid specification suffix `{suff}\'')
+  tech = (cur['tech'] if cur is not None else ss[0]).strip ()
+  args = (cur['args'] if cur is not None and 'args' in cur else '').strip ()
+  return ((tech, args),) + _parse_dimred_str (ss[2])
+
+
+def _parse_dimred_specs (s):
+  aliases = {'rbf-kpca': 'rbf_kpca'}
+  def _parse_positive_int_or_float_ratio_or_mle (s):
+    return s if s == 'mle' else parse_positive_int_or_float_ratio (s)
+  ap = dict (pca = _parse_positive_int_or_float_ratio_or_mle,
+             rbf_kpca = parse_positive_int,
+             ica = parse_positive_int,
+             lda = parse_positive_int)
+  acc = ()
+  for tech, arg in _parse_dimred_str (s):
+    t = aliases[tech] if tech in aliases else tech
+    if t in ap:
+      try:
+        acc += ((t, ap[t](arg)),) if arg != '' else ((t,),)
+      except ValueError as e:
+        raise ValueError (f'Invalid argument for {tech}: {e}')
+    elif t == '' and arg == '':
+      acc += (None,)
+    else:
+      vls = ', '.join (ap.keys ())
+      raise ValueError (f'Unknown dimensionality reduction technique `{t}\'. '
+                        f'Accepted values are: {vls}')
+  return acc
+
+
+def parse_dimred_specs (test_object, dimred_specs):
+  head_idx = test_object.layer_indices[0] if test_object.layer_indices is not None else 0
+  tail_idx = test_object.layer_index (-1)
+  last_layer = test_object.dnn.layers[tail_idx]
+  if is_activation_layer (last_layer) and not activation_is_relu (last_layer):
+    tail_idx -= 1
+
+  specs = _parse_dimred_specs (dimred_specs)
+  if len (specs) == 0 or specs[0] is None or specs[-1] is None:
+    raise ValueError ('Invalid dimensionality reduction specifications '
+                      f'(got `{dimred_specs}\')')
+
+  if len (specs) <= 2:
+    specs = (specs * 2 if len (specs) == 1 else specs) + (('pca', 'mle'),)
+  elif len (specs) == 3 and specs[1] is None: # handle `spec0::spec1' case.
+    specs = (specs[0],) * 2 + (specs[2],)
+
+  if len (specs) > 3:
+    raise ValueError ('To many dimensionality reduction specifications '
+                      f'(got {len (specs)}, expected < 4)')
+
+  def spec_dict (spec):
+    tech = spec[0]
+    args = spec[1:]
+    res = dict (decomp = tech,
+                n_components = args[0] if args != () else None)
+    if tech in ('ica',):
+      res.update (max_iter = 10000)
+    return res
+
+  specs = tuple (spec_dict (spec) for spec in specs)
+  feats = lambda i: (specs[0] if i == head_idx else
+                     specs[-1] if i >= tail_idx else
+                     specs[1])
+  return feats
+
+dimred_specs_doc = """
+  specification of dimensionality reduction techniques, in the
+  form of a pair or triple `<first>:<middle>[:<last>]', where each
+  <_> denotes a call `<reduction technique> [ (<args>) ]', e.g.,
+ `pca', `ica(2)', or `pca(mle)'.
+
+  If <middle> is empty then it is replaced with the specification 
+  for the first layer, e.g., `pca(10)::pca(mle)' is equivalent to
+  `pca(10):pca(10):pca(mle)'.
+
+  If <last> is not given (as in `pca(.5)' or `pca:ica(2)'), then 
+  it is `pca(mle)' by default.
+"""
 
 # ---
 

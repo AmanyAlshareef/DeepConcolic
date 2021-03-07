@@ -3,6 +3,7 @@ from .utils import *
 from .utils_funcs import rng_seed
 from .utils_args import *
 from .dbnc import BNAbstraction, layer_setup, interval_repr
+from .dbnc import parse_dimred_specs, dimred_specs_doc
 from tabulate import tabulate
 from . import plugins
 from . import datasets
@@ -78,26 +79,33 @@ ap_create.add_argument ("--layers", dest = "layers", nargs = "+", metavar = "LAY
 ap_create.add_argument ('--train-size', '-ts', type = int,
                         help = 'train dataset size (default is all)',
                         metavar = 'INT')
-ap_create.add_argument ('--feature-extraction', '-fe',
-                        choices = ('pca', 'ipca', 'ica',), default = 'pca',
-                        help = 'feature extraction technique (default is pca)')
-ap_create.add_argument ('--num-features', '-nf', type = int, default = 2,
-                        help = 'number of extracted features for each layer '
-                        '(default is 2)', metavar = 'INT')
-ap_create.add_argument ('--num-intervals', '-ni', type = int, default = 2,
-                        help = 'number of intervals for each extracted feature '
-                        '(default is 2)', metavar = 'INT')
-ap_create.add_argument ('--discr-strategy', '-ds',
-                        choices = ('uniform', 'quantile',), default = 'uniform',
-                        help = 'discretisation strategy (default is uniform)')
-ap_create.add_argument ('--extended-discr', '-xd', action = 'store_true',
-                        help = 'use extended partitions')
+def add_abstraction_param_args (ap):
+  gp = ap.add_mutually_exclusive_group (required = False)
+  basic = gp.add_argument_group ('basic specification')
+  basic.add_argument ('--feature-extraction', '-fe',
+                      choices = ('pca', 'ipca', 'ica',), default = 'pca',
+                      help = 'feature extraction technique (default is pca)')
+  basic.add_argument ('--num-features', '-nf', type = int, default = 2,
+                      help = 'number of extracted features for each layer '
+                      '(default is 2)', metavar = 'INT')
+  ap.add_argument ('--dimred-specs', '-dr', type = str, default = None,
+                   metavar = 'SPEC', help = dimred_specs_doc)
+  ap.add_argument ('--num-intervals', '-ni', type = int, default = 2,
+                   help = 'number of intervals for each extracted feature '
+                   '(default is 2)', metavar = 'INT')
+  ap.add_argument ('--discr-strategy', '-ds',
+                   choices = ('uniform', 'quantile',), default = 'uniform',
+                   help = 'discretisation strategy (default is uniform)')
+  ap.add_argument ('--extended-discr', '-xd', action = 'store_true',
+                   help = 'use extended partitions')
+add_abstraction_param_args (ap_create)
 
 def create (test_object,
             layers = None,
             train_size = None,
             feature_extraction = None,
             num_features = None,
+            dimred_specs = None,
             num_intervals = None,
             discr_strategy = None,
             extended_discr = False,
@@ -105,12 +113,15 @@ def create (test_object,
             **_):
   if layers is not None:
     test_object.set_layer_indices (int (l) if l.isdigit () else l for l in layers)
+  if dimred_specs is not None:
+    feats = parse_dimred_specs (test_object, dimred_specs)
+  else:
+    feats = dict (decomp = feature_extraction, n_components = num_features)
   n_bins = num_intervals - 2 if extended_discr else num_intervals
   if n_bins < 1:
     raise ValueError (f'The total number of intervals for each extracted feature '
                       f'must be strictly positive (got {n_bins} '
                       f'with{"" if extended_discr else "out"} extended discretization)')
-  feats = dict (decomp = feature_extraction, n_components = num_features)
   discr = dict (strategy = discr_strategy, n_bins = n_bins, extended = extended_discr)
   setup_layer = lambda l, i, **kwds: \
     layer_setup (l, i, feats, discr, discr_n_jobs = 8)
