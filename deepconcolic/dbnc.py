@@ -1,14 +1,14 @@
 import joblib                   # for saving abstraction pipelines
-import plotting
 import builtins
-from plotting import plt
-from utils import *
-from utils_io import *
-from utils_funcs import *
-from utils_stats import AutoRBFKernelPCA
-from engine import *
-from kde_utils import KDESplit
-from l0_encoding import L0EnabledTarget
+from . import plotting
+from .plotting import plt
+from .utils import *
+from .utils_io import *
+from .utils_funcs import *
+from .utils_stats import AutoRBFKernelPCA
+from .engine import *
+from .kde_utils import KDESplit
+from .l0_encoding import L0EnabledTarget
 from functools import reduce
 from operator import iconcat
 from itertools import product
@@ -1960,7 +1960,7 @@ def show_report_on_feature_extractions_ (outdir = None, basefilename = None):
 # ---
 
 
-from engine import setup as engine_setup
+from .engine import setup as engine_setup
 
 def setup (setup_criterion = None,
            test_object = None,

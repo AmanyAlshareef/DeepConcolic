@@ -1,8 +1,8 @@
 # Input filters
 
-from utils_io import *
-from utils import *
-from engine import _InputsStatBasedInitializable, StaticFilter, Input
+from .utils_io import *
+from .utils import *
+from .engine import _InputsStatBasedInitializable, StaticFilter, Input
 from sklearn.neighbors import LocalOutlierFactor
 
 choices = []

@@ -1,6 +1,6 @@
-from utils_io import *
-from utils_funcs import *
-from utils import *
+from .utils_io import *
+from .utils_funcs import *
+from .utils import *
 from functools import reduce
 from sklearn.model_selection import train_test_split
 import yaml                             # for dumping record

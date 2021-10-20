@@ -1,6 +1,6 @@
 import argparse
-from utils_funcs import some
-from utils_io import dir_or_file_in_dir, p1
+from .utils_funcs import some
+from .utils_io import dir_or_file_in_dir, p1
 
 # ---
 

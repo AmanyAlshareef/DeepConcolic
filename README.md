@@ -129,7 +129,7 @@ to run DeepConcolic are in the following.
 To run an MNIST model
 
 ```sh
-python -m deepconcolic.main --model saved_models/mnist_complicated.h5 --dataset mnist --outputs outs/
+python -m deepconcolic.main --model saved_models/mnist_complicated.h5 --dataset mnist --outputs outs/ --norm l0 --criterion nc
 ```
 
 To run an CIFAR10 model

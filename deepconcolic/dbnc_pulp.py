@@ -1,19 +1,19 @@
 from typing import *
-from utils import *
 from pulp import *
-from pulp_encoding import *
-from amplif import AnalyzerWithLinearExtrapolation
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA, FastICA
 
 # ---
 
-from engine import LayerLocalAnalyzer, CoverableLayer
-from dbnc import BFcLayer
-from dbnc import BFcTarget, BFcAnalyzer
-from dbnc import BFDcTarget, BFDcAnalyzer
-from lp import PulpLinearMetric, PulpSolver4DNN
+from .utils import *
+from .pulp_encoding import *
+from .amplif import AnalyzerWithLinearExtrapolation
+from .engine import LayerLocalAnalyzer, CoverableLayer
+from .dbnc import BFcLayer
+from .dbnc import BFcTarget, BFcAnalyzer
+from .dbnc import BFDcTarget, BFDcAnalyzer
+from .lp import PulpLinearMetric, PulpSolver4DNN
 
 
 class PulpBFcAbstrLayerEncoder (PulpStrictLayerEncoder):

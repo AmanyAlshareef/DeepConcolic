@@ -157,3 +157,6 @@ class LazyLambdaDict (Dict[D, C]):
 
   def __delitem__(self,_):
     raise RuntimeError ('Invalid item deletion on `LazyLambdaDict` object')
+
+  def __repr__(self):
+    return '{ ' + ', '.join (f'{x} -> _' for x in self.domain) + ' }'

@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 import argparse
-from pathlib import Path
-from utils_io import *
-from utils_funcs import *
-from utils import *
-from bounds import UniformBounds, StatBasedInputBounds
-import fuzzer, datasets
-import filters
-import plugins
 import yaml
+from pathlib import Path
+from .utils_io import *
+from .utils_funcs import *
+from .utils import *
+from .bounds import UniformBounds, StatBasedInputBounds
+from . import fuzzer, datasets, filters, plugins
 
 
 def deepconcolic(criterion, norm, test_object, report_args,
@@ -22,10 +20,10 @@ def deepconcolic(criterion, norm, test_object, report_args,
   test_object.check_layer_indices (criterion)
   engine = None
   if criterion=='nc':                   ## neuron cover
-    from nc import setup as nc_setup
+    from .nc import setup as nc_setup
     if norm=='linf':
-      from pulp_norms import LInfPulp
-      from nc_pulp import NcPulpAnalyzer
+      from .pulp_norms import LInfPulp
+      from .nc_pulp import NcPulpAnalyzer
       engine = nc_setup (test_object = test_object,
                          engine_args = engine_args,
                          setup_analyzer = NcPulpAnalyzer,
@@ -33,7 +31,7 @@ def deepconcolic(criterion, norm, test_object, report_args,
                          input_bounds = input_bounds,
                          postproc_inputs = postproc_inputs)
     elif norm=='l0':
-      from nc_l0 import NcL0Analyzer
+      from .nc_l0 import NcL0Analyzer
       l0_args = copy.copy (norm_args)
       del l0_args['LB_noise']
       engine = nc_setup (test_object = test_object,
@@ -47,11 +45,11 @@ def deepconcolic(criterion, norm, test_object, report_args,
       print('\n not supported norm... {0}\n'.format(norm))
       sys.exit(0)
   elif criterion=='bfc':                ## feature cover
-    from dbnc import setup as dbnc_setup
-    from dbnc import BFcCriterion
+    from .dbnc import setup as dbnc_setup
+    from .dbnc import BFcCriterion
     if norm == 'linf':
-      from pulp_norms import LInfPulp
-      from dbnc_pulp import BFcPulpAnalyzerWithLinearExtrapolation as Analyzer
+      from .pulp_norms import LInfPulp
+      from .dbnc_pulp import BFcPulpAnalyzerWithLinearExtrapolation as Analyzer
       engine = dbnc_setup (**dbnc_spec,
                            test_object = test_object,
                            engine_args = engine_args,
@@ -64,7 +62,7 @@ def deepconcolic(criterion, norm, test_object, report_args,
                            fix_untargetted_components = True,
                            outdir = report_args['outdir'])
     elif norm=='l0':
-      from dbnc_l0 import BFcL0Analyzer
+      from .dbnc_l0 import BFcL0Analyzer
       l0_args = copy.copy (norm_args)
       del l0_args['LB_noise']
       engine = dbnc_setup (**dbnc_spec,
@@ -80,11 +78,11 @@ def deepconcolic(criterion, norm, test_object, report_args,
     else:
       sys.exit ('\n not supported norm... {0}\n'.format(norm))
   elif criterion=='bfdc':               ## feature-dependence cover
-    from dbnc import setup as dbnc_setup
-    from dbnc import BFDcCriterion
+    from .dbnc import setup as dbnc_setup
+    from .dbnc import BFDcCriterion
     if norm == 'linf':
-      from pulp_norms import LInfPulp
-      from dbnc_pulp import BFDcPulpAnalyzerWithLinearExtrapolation as Analyzer
+      from .pulp_norms import LInfPulp
+      from .dbnc_pulp import BFDcPulpAnalyzerWithLinearExtrapolation as Analyzer
       engine = dbnc_setup (**dbnc_spec,
                            test_object = test_object,
                            engine_args = engine_args,
@@ -99,11 +97,11 @@ def deepconcolic(criterion, norm, test_object, report_args,
     else:
       sys.exit ('\n not supported norm... {0}\n'.format(norm))
   elif criterion=='dbnc_stats':
-    import dbnc_stats
+    from . import dbnc_stats
     dbnc_stats.run (test_object, report_args['outdir'],
                     input_bounds = input_bounds)
   elif criterion=='ssc':
-    from ssc import SScGANBasedAnalyzer, setup as ssc_setup
+    from .ssc import SScGANBasedAnalyzer, setup as ssc_setup
     linf_args = copy.copy (norm_args)
     del linf_args['LB_hard']
     del linf_args['LB_noise']
@@ -115,9 +113,9 @@ def deepconcolic(criterion, norm, test_object, report_args,
                         postproc_inputs = postproc_inputs,
                         linf_args = linf_args)
   elif criterion=='ssclp':
-    from pulp_norms import LInfPulp
-    from mcdc_pulp import SScPulpAnalyzer
-    from ssc import setup as ssc_setup
+    from .pulp_norms import LInfPulp
+    from .mcdc_pulp import SScPulpAnalyzer
+    from .ssc import setup as ssc_setup
     engine = ssc_setup (test_object = test_object,
                         engine_args = engine_args,
                         setup_analyzer = SScPulpAnalyzer,
@@ -126,7 +124,7 @@ def deepconcolic(criterion, norm, test_object, report_args,
                         postproc_inputs = postproc_inputs,
                         concolic = True)
   elif criterion=='svc':
-    from run_ssc import run_svc
+    from .run_ssc import run_svc
     print('\n== Starting DeepConcolic tests for {0} =='.format (test_object))
     run_svc(test_object, report_args['outdir'])
   else:

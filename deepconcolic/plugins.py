@@ -1,6 +1,6 @@
 import sys, os
-from utils_io import p1, tp1
-from utils_imports import load_submodules
+from .utils_io import p1, tp1
+from .utils_imports import load_submodules
 
 _verbose = 1
 try:

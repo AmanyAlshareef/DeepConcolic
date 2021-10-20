@@ -1,8 +1,8 @@
 import numpy as np
 from typing import *
 from pulp import *
-from norms import LInf
-from lp import PulpLinearMetric
+from .norms import LInf
+from .lp import PulpLinearMetric
 
 
 # ---

@@ -1,12 +1,12 @@
-from utils import *
+from .utils import *
+from .pulp_encoding import *
 from pulp import *
-from pulp_encoding import *
 
 # ---
 
-from engine import LayerLocalAnalyzer, CoverableLayer, Input
-from nc import NcAnalyzer, NcTarget
-from lp import PulpLinearMetric, PulpSolver4DNN
+from .engine import LayerLocalAnalyzer, CoverableLayer, Input
+from .nc import NcAnalyzer, NcTarget
+from .lp import PulpLinearMetric, PulpSolver4DNN
 
 
 class NcPulpAnalyzer (NcAnalyzer, LayerLocalAnalyzer, PulpSolver4DNN):

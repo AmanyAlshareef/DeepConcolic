@@ -1,4 +1,4 @@
-import datasets
+from deepconcolic import datasets
 
 # For details on the randomly generated datasets, see
 # `https://scikit-learn.org/stable/modules/generated/sklearn.datasets.make_classification.html'

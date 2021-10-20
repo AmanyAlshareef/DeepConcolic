@@ -1,4 +1,4 @@
-from utils_funcs import *
+from .utils_funcs import *
 from sklearn.decomposition import KernelPCA
 # from sklearn.pipeline import Pipeline
 # from sklearn.linear_model import Perceptron

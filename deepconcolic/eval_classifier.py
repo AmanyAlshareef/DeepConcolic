@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 import argparse
-import datasets
-import plugins
+from . import datasets
+from . import plugins
 from pathlib import Path
-from utils_io import *
-from utils_funcs import *
+from .utils_io import *
+from .utils_funcs import *
 
 def report (dnn, test_data):
   from utils import predictions

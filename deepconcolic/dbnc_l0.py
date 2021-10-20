@@ -1,5 +1,5 @@
-from dbnc import BFcAnalyzer
-from l0_encoding import GenericL0Analyzer
+from .dbnc import BFcAnalyzer
+from .l0_encoding import GenericL0Analyzer
 
 
 class BFcL0Analyzer (GenericL0Analyzer, BFcAnalyzer):

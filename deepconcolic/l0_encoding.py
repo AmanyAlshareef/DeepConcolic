@@ -1,7 +1,7 @@
-from utils import *
+from .utils import *
+from .engine import Input, Analyzer4RootedSearch
+from .norms import L0
 from itertools import product
-from engine import Input, Analyzer4RootedSearch
-from norms import L0
 import numpy as np
 
 # ---

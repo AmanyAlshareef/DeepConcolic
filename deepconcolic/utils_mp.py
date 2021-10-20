@@ -1,4 +1,4 @@
-from utils_io import sys, warnings, p1
+from .utils_io import sys, warnings, p1
 from multiprocessing import Process, SimpleQueue, cpu_count, freeze_support
 # from multiprocessing import Pool
 

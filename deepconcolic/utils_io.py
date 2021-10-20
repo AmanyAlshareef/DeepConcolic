@@ -1,6 +1,6 @@
 import sys, os, datetime, cv2, warnings, parse, tempfile
 import numpy as np
-from utils_funcs import random
+from .utils_funcs import random
 
 # ---
 
@@ -84,6 +84,9 @@ class OutputDir:
     self.stamp = datetime.datetime.now ().strftime("%Y%m%d-%H%M%S") \
                  if stamp is None and self.enable_stamp else \
                  stamp if self.enable_stamp else ''
+
+  def __str__(self) -> str:
+    return self.dirpath
 
   @property
   def path(self) -> str:

@@ -1,9 +1,9 @@
-import plotting
 import scipy.signal as sig
-from plotting import plt
+from . import plotting
+from .plotting import plt
+from .utils_funcs import *
+from .utils import *
 from typing import *
-from utils_funcs import *
-from utils import *
 from sklearn.neighbors import KernelDensity
 from sklearn.model_selection import GridSearchCV
 

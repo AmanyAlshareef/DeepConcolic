@@ -1,10 +1,10 @@
-from utils_io import *
-from utils import *
-from engine import (Input, TestTarget,
-                    BoolMappedCoverableLayer, LayerLocalCriterion,
-                    Criterion4RootedSearch,
-                    Analyzer4RootedSearch)
-from l0_encoding import L0EnabledTarget
+from .utils_io import *
+from .utils import *
+from .engine import (Input, TestTarget,
+                     BoolMappedCoverableLayer, LayerLocalCriterion,
+                     Criterion4RootedSearch,
+                     Analyzer4RootedSearch)
+from .l0_encoding import L0EnabledTarget
 
 
 # ---
@@ -96,7 +96,7 @@ class NcCriterion (LayerLocalCriterion, Criterion4RootedSearch):
 # ---
 
 
-from engine import setup as engine_setup, Engine
+from .engine import setup as engine_setup, Engine
 
 def setup (test_object = None,
            setup_analyzer: Callable[[dict], NcAnalyzer] = None,

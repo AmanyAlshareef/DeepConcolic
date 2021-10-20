@@ -1,6 +1,6 @@
 from abc import abstractmethod
-from utils_io import *
-from utils_funcs import *
+from .utils_io import *
+from .utils_funcs import *
 import sys, copy
 
 # NB: importing cv2 and sklearn before tensorflow seems to solve an
@@ -258,7 +258,7 @@ class fix_image_channels_:
 
 
 def dataset_dict (name, save_input_args = ('new_inputs',)):
-  import datasets
+  from . import datasets
   np1 (f'Loading {name} dataset... ')
   (x_train, y_train), (x_test, y_test), dims, kind, labels = datasets.load_by_name (name)
   test_data = raw_datat (x_test, y_test, name)

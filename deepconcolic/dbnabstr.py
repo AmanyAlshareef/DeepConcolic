@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
-from utils import *
-from utils_funcs import rng_seed
-from utils_args import *
-from dbnc import BNAbstraction, layer_setup, interval_repr
+from .utils import *
+from .utils_funcs import rng_seed
+from .utils_args import *
+from .dbnc import BNAbstraction, layer_setup, interval_repr
 from tabulate import tabulate
-import datasets
-import plugins
+from . import plugins
+from . import datasets
 import scipy
 
 # ---
 
-def load_model (filename, print_summary = True):
-  tf.compat.v1.disable_eager_execution ()
+def load_model (filename, print_summary = True,
+                disable_eager_execution = True):
+  if disable_eager_execution:
+    tf.compat.v1.disable_eager_execution ()
   dnn = keras.models.load_model (filename)
   if print_summary:
     dnn.summary ()

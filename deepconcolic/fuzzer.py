@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-from utils_io import *
-from utils_args import *
-from utils_funcs import rng_seed, random, randint
-from utils_mp import init as mp_init, FFPool, forking, np_share
+from .utils_io import *
+from .utils_args import *
+from .utils_funcs import rng_seed, random, randint
+from .utils_mp import init as mp_init, FFPool, forking, np_share
 from pathlib import Path
-import datasets
-import plugins
+from . import datasets
+from . import plugins
 
 # ## to be refined
 # apps = ['./deepconcolic/run_template.py']
@@ -163,7 +163,7 @@ def test_mutations (model, test_data, postproc = id,
                     flag_diff = np_neq,
                     flag_cov = np_true):
 
-  from utils import load_model, predictions
+  from .utils import load_model, predictions
 
   dnn = load_model (model)
 
@@ -238,7 +238,7 @@ def run (dataset = None,
          verbose = False):
   assert dataset in datasets.choices
 
-  from utils import dataset_dict
+  from .utils import dataset_dict
   dd = dataset_dict (dataset)
   test_data, dims, save_input, postproc = \
     dd['test_data'], dd['dims'], dd['save_input'], dd['postproc_inputs']

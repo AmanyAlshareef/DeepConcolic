@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from engine import Metric
+from .engine import Metric
 import numpy as np
 
 

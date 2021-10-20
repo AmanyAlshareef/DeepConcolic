@@ -1,6 +1,6 @@
-from utils_io import *
-from utils import *
-from engine import _InputsStatBasedInitializable, Input, Bounds
+from .utils_io import *
+from .utils import *
+from .engine import _InputsStatBasedInitializable, Input, Bounds
 
 
 # ---

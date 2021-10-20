@@ -1,12 +1,12 @@
-from bounds import UniformBounds
-from pulp import *
-from utils_io import *
-from utils import *
-from engine import Bounds
 from multiprocessing import cpu_count
+from . import pulp_encoding
+from . import engine
+from .bounds import UniformBounds
+from .utils_io import *
+from .utils import *
+from .engine import Bounds
 import pulp
-import pulp_encoding
-import engine
+from pulp import *
 import numpy as np
 
 # ---

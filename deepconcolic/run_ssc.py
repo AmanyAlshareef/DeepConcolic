@@ -10,8 +10,8 @@ from tensorflow.keras.applications.vgg16 import VGG16
 from tensorflow.keras.preprocessing.image import load_img
 from tensorflow.keras.layers import *
 from tensorflow.keras import *
-from utils import *
-from ssc import *
+from .utils import *
+from .ssc import *
 
 from art.attacks.evasion import FastGradientMethod
 from art.estimators.classification import KerasClassifier
@@ -195,7 +195,7 @@ from art.estimators.classification import KerasClassifier
 #       print ('all decision features at layer {0} have been covered'.format(dec_layer.layer_index))
 #       sys.exit(0)
 
-from engine import CoverableLayer
+from .engine import CoverableLayer
 def run_svc(test_object, outs):
   print ('To run svc\n')
 

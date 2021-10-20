@@ -1,9 +1,9 @@
 # Basic amplification of input features
 
 from typing import *
-from utils_io import p1, tp1
-from utils import np
-from engine import Input, InputsDict, Bounds, TestTarget, Analyzer
+from .utils_io import p1, tp1
+from .utils import np
+from .engine import Input, InputsDict, Bounds, TestTarget, Analyzer
 
 # ---
 

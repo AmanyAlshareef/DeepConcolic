@@ -1,11 +1,11 @@
-import norms
-import scripting
-from utils_io import *
-from utils_funcs import *
-from dbnc import *
-from nc import *
-from bounds import UniformBounds
-from engine import Metric
+from . import norms
+from . import scripting
+from .utils_io import *
+from .utils_funcs import *
+from .dbnc import *
+from .nc import *
+from .bounds import UniformBounds
+from .engine import Metric
 from sklearn.model_selection import train_test_split
 
 # ---

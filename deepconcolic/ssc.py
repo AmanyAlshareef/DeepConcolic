@@ -1,7 +1,7 @@
-from utils_io import *
-from utils import *
+from .utils_io import *
+from .utils import *
+from .engine import Coverage
 from itertools import product
-from engine import Coverage
 
 from tensorflow.python.keras.utils.conv_utils import conv_connected_inputs
 
@@ -286,12 +286,12 @@ def svc_search(test_object, cond_layer, dec_layer, dec_pos, adv_crafter, dec_ub)
 
 
 from typing import *
-from engine import (Input, TestTarget,
-                    BoolMappedCoverableLayer, LayerLocalCriterion,
-                    Criterion4FreeSearch, Criterion4RootedSearch,
-                    Analyzer4FreeSearch, Analyzer4RootedSearch,
-                    EarlyTermination)
-from engine import setup as engine_setup, Engine
+from .engine import (Input, TestTarget,
+                     BoolMappedCoverableLayer, LayerLocalCriterion,
+                     Criterion4FreeSearch, Criterion4RootedSearch,
+                     Analyzer4FreeSearch, Analyzer4RootedSearch,
+                     EarlyTermination)
+from .engine import setup as engine_setup, Engine
 
 
 # ---
@@ -653,7 +653,7 @@ def setup (test_object = None,
 from art.attacks.evasion import FastGradientMethod
 from art.estimators.classification import KerasClassifier
 
-from norms import LInf
+from .norms import LInf
 
 class SScGANBasedAnalyzer (SScAnalyzer4FreeSearch):
 
