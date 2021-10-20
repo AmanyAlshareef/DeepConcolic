@@ -167,11 +167,18 @@ def get_cover_layers (dnn, constr, layer_indices = None,
 
 # Do we really manipulate many DNNs at once?
 from functools import lru_cache
-@lru_cache(4)
-def get_layer_functions(dnn):
-  return ([ keras.backend.function([layer.input], [layer.output])
+@lru_cache (4)
+def get_layer_functions (dnn):
+  return ([ keras.backend.function([layer.input],
+                                   [layer.output])
             for layer in dnn.layers ],
           is_input_layer (dnn.layers[0]))
+
+def get_functions (nn, layer_indexes):
+  return { li: (keras.backend.function ([nn.input],
+                                        [nn.get_layer (li).output])
+                if not is_input_layer (nn.get_layer (li)) else None)
+           for li in layer_indexes }
 
 # ---
 
@@ -185,34 +192,47 @@ def batched_eval (f, X, axis = 0, batch_size = _default_batch_size):
 
 # ---
 
-### given input images, evaluate activations
-def eval_batch(o, ims, allow_input_layer = False, layer_indexes = None,
-               batch_size = None):
-  layer_functions, has_input_layer = (
-    get_layer_functions (o) if isinstance (o, (keras.Sequential, keras.Model))
-    # TODO: Check it's sequential? --------------------------------------^
-    else o)
-  activations = []
-  deepest_layer_index = max (layer_indexes) if layer_indexes is not None else None
-  prev, prevv = None, None
-  for l, func in enumerate (layer_functions):
-    prev = ([] if has_input_layer and l == 0 else \
-            batched_eval (func,
-                          ims if l == (1 if has_input_layer else 0) else prev,
-                          batch_size = batch_size))
-    if prevv is not None and activations[-1] is not prevv:
-      del prevv
-    activations.append (prev if layer_indexes is None or l in layer_indexes else [])
-    if deepest_layer_index is not None and l == deepest_layer_index:
-      break
-    prevv = prev
+### given inputs, evaluate activations
+def eval_batch (nn, ims,
+                allow_input_layer = False,
+                layer_indexes = None,
+                batch_size = None):
+  # print (layer_indexes)
+  if isinstance (nn, keras.Sequential):
+    deepest_layer_index = max (layer_indexes) if layer_indexes is not None else None
+    layer_functions, has_input_layer = (
+      get_layer_functions (nn) #  if isinstance (o, (keras.Sequential, keras.Model))
+      # # TODO: Check it's sequential? --------------------------------------^
+      # else o
+    )
+    activations = []
+    prev, prevv = None, None
+    for l, func in enumerate (layer_functions):
+      prev = ([] if has_input_layer and l == 0 else \
+              batched_eval (func,
+                            ims if l == (1 if has_input_layer else 0) else prev,
+                            batch_size = batch_size))
+      if prevv is not None and activations[-1] is not prevv:
+        del prevv
+      activations.append (prev if layer_indexes is None or l in layer_indexes else [])
+      if deepest_layer_index is not None and l == deepest_layer_index:
+        break
+      prevv = prev
+  else:
+    layer_functions = get_functions (nn, layer_indexes)
+    # print (layer_indexes, layer_functions)
+    activations = { li: (batched_eval (layer_functions[li], ims,
+                                       batch_size = batch_size)
+                         if layer_functions[li] is not None else ims.copy ())
+                    for li in layer_functions }
+    # print (activations)
   return activations
 
-def eval(o, im, **kwds):
-  return eval_batch (o, np.array([im]), **kwds)
+def eval (nn, im, **kwds):
+  return eval_batch (nn, np.array([im]), **kwds)
 
-def eval_batch_func (dnn):
-  return lambda imgs, **kwds: eval_batch (dnn, imgs, **kwds)
+def eval_batch_func (nn):
+  return lambda imgs, **kwds: eval_batch (nn, imgs, **kwds)
 
 def _prediction (f, x, top_classes = None):
   return \
@@ -505,7 +525,7 @@ def lazy_activations_on_indexed_data (fnc, dnn, data: raw_datat,
   if pass_kwds:
     return fnc (LazyLambdaDict (f, layer_indexes),
                 input_data = input_data,
-                true_labels = data.labels[indexes],
+                true_labels = data.labels[indexes] if indexes else data.labels,
                 pred_labels = predictions (dnn, input_data))
   else:
     return fnc (LazyLambdaDict (f, layer_indexes))

@@ -293,7 +293,7 @@ dimred_specs_doc = """
 class FAbstraction:
 
   def __init__(self,
-               flayers: Sequence[FLayer],
+               flayers: Union[Sequence[FLayer], Mapping[Any, FLayer]],
                *args,
                feat_extr_train_size = 1,
                print_classification_reports = True,
@@ -312,7 +312,8 @@ class FAbstraction:
     self.score_layer_likelihoods = score_layer_likelihoods
     self.report_on_feature_extractions = report_on_feature_extractions
     self.close_reports_on_feature_extractions = close_reports_on_feature_extractions
-    self.flayers = flayers
+    # self.train_on_correctly_classified_only = train_on_correctly_classified_only
+    self.flayers_ = flayers
     self.outdir = outdir or OutputDir ()
     p1 ('Abstracted layers: ' + ', '.join (self.flayer_names))
 
@@ -323,8 +324,16 @@ class FAbstraction:
 
 
   @property
+  def flayers (self) -> Sequence[FLayer]:
+    return (self.flayers_ if isinstance (self.flayers_, Sequence) else \
+            self.flayers_.values ())
+
+  @property
   def flayer_names (self) -> Sequence[str]:
     return tuple (fl.layer.name for fl in self.flayers)
+
+  def get_flayer (self, x) -> FLayer:
+    return self.flayers_[x]
 
 
   def dump_abstraction (self, pathname = None, outdir = None, base = 'abstraction'):
@@ -383,12 +392,14 @@ class FAbstraction:
     #   ok_labels, ko_labels = true_labels[ok_idxs], true_labels[~ok_idxs]
     # else:
     if True:
-      ok_idxs = np.full (len (true_labels), True, dtype = bool)
-      ok_labels, ko_labels = true_labels, []
+      if true_labels is not None:
+        ok_idxs = np.full (len (true_labels), True, dtype = bool)
+        ts0 = np.count_nonzero (ok_idxs)
+        cp1 ('| Given {} classified training samples'.format (*s_(ts0)))
+      else:
+        ok_idxs, ts0 = slice (None), 0
+      ok_labels, ko_labels = [], []
 
-    ts0 = np.count_nonzero (ok_idxs)
-    # cp1 ('| Given {} correctly classified training sample'.format (*s_(ts0)))
-    cp1 ('| Given {} classified training sample'.format (*s_(ts0)))
     fts = None if self.feat_extr_train_size == 1 \
           else (min (ts0, int (self.feat_extr_train_size))
                 if self.feat_extr_train_size > 1
@@ -400,7 +411,9 @@ class FAbstraction:
     for fl in self.flayers:
       p1 ('| Extracting features for layer {}... '.format (fl))
       facts = acts[fl.layer_index]
-      x_ok = facts[ok_idxs].reshape (ts0, -1)
+      x_ok = facts[ok_idxs]
+      if ts0 > 0:
+        x_ok = x_ok.reshape (ts0, -1)
 
       tp1 ('Extracting features...')
 
