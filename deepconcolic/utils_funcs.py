@@ -1,3 +1,4 @@
+from abc import abstractmethod
 from typing import *
 from collections import UserDict
 import random
@@ -95,6 +96,17 @@ def randint ():
 
 # ---
 
+
+class ParameterizableObject:
+  def __init__(self, *_, **__):
+    super ().__init__ (*_, **__)
+    self.set_params (**__)
+
+  @abstractmethod
+  def set_params (self, **__):
+    pass
+
+# ---
 
 try:
   # Use xxhash if available as it's probably more efficient

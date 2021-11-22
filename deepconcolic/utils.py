@@ -515,8 +515,9 @@ def print_adversarial_distribution(advs, fname, int_flag=False):
 # ---
 
 def lazy_activations_on_indexed_data (fnc, dnn, data: raw_datat,
-                                      indexes, layer_indexes,
-                                      pass_kwds = True):
+                                      indexes, layer_indexes, *_,
+                                      pass_kwds = True, **__):
+  indexes = indexes if indexes is not None else slice (None)
   input_data = data.data[indexes]
   f = lambda j: LazyLambda \
     ( lambda i: (eval_batch (dnn, input_data[i], allow_input_layer = True,
@@ -525,10 +526,10 @@ def lazy_activations_on_indexed_data (fnc, dnn, data: raw_datat,
   if pass_kwds:
     return fnc (LazyLambdaDict (f, layer_indexes),
                 input_data = input_data,
-                true_labels = data.labels[indexes] if indexes else data.labels,
-                pred_labels = predictions (dnn, input_data))
+                true_labels = data.labels[indexes],
+                pred_labels = predictions (dnn, input_data), *_, **__)
   else:
-    return fnc (LazyLambdaDict (f, layer_indexes))
+    return fnc (LazyLambdaDict (f, layer_indexes), *_ , **__)
 
 
 # TODO: customize default batch_size?

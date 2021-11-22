@@ -9,7 +9,7 @@ def iter_namespace (pkg_or_path, prefix = '', **kwds):
   is_path = pkg_or_path is None or isinstance (pkg_or_path, list)
   path, prefix = \
     (pkg_or_path, prefix) if is_path else \
-    (pkg_or_path.__path__, prefix if prefix is not '' else pkg_or_path.__name__ + ".")
+    (pkg_or_path.__path__, prefix if prefix != '' else pkg_or_path.__name__ + ".")
   return pkgutil.walk_packages (path, prefix, **kwds)
 
 def load_submodules (root, modules = None, prefix = '', **kwds):

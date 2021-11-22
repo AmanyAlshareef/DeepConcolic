@@ -10,10 +10,11 @@ from multiprocessing import Process, SimpleQueue, cpu_count, freeze_support
 # ---
 
 
-def worker_process (pid, verbose, mk_func, todo, done, *args):
+def worker_process (pid, verbose, mk_func, todo, done, *args, pass_pid = False):
   if verbose:
     p1 (f'Starting worker {pid}')
-  func = mk_func (*args)
+  kwds = dict (pid = pid) if pass_pid else dict ()
+  func = mk_func (*args, **kwds)
   try:
     while True:
       work = todo.get ()
@@ -30,7 +31,8 @@ class FFPool:
   def __init__(self, mk_func, *args,
                processes = 1,
                verbose = False,
-               queue = SimpleQueue):
+               queue = SimpleQueue,
+               pass_pid = False):
     """Feed-forward pool of workers that pull work from a shared `todo`
     queue and push results into a shared `done` queue. 
 
@@ -48,7 +50,8 @@ class FFPool:
   
     pool_size = processes if processes > 0 else max (1, cpu_count () - 1)
     pool = tuple (Process (target = worker_process,
-                           args = (pid, verbose, mk_func, todo, done,) + args)
+                           args = (pid, verbose, mk_func, todo, done,) + args,
+                           kwargs = dict (pass_pid = pass_pid))
                   for pid in range (pool_size))
 
     self.verbose = verbose

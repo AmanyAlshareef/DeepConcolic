@@ -1,5 +1,6 @@
-from utils_io import OutputDir, tp1
+from .utils_io import OutputDir, tp1
 import os
+import tempfile
 
 mpl_backend = os.getenv ('DC_MPL_BACKEND')
 mpl_fig_width = float (os.getenv ('DC_MPL_FIG_WIDTH', default = 7.))
@@ -8,8 +9,12 @@ mpl_fig_pgf_width = float (os.getenv ('DC_MPL_FIG_PGF_WIDTH', default = 4.7))
 
 default_params = {
   'font.size': 11,
-  'font.family': 'cmr10',
+  # 'font.family': 'cmr10',
   'axes.unicode_minus': False,
+  'axes.formatter.use_mathtext': True,
+  'axes.labelpad': 2,
+  'xtick.major.pad': 2.,
+  'ytick.major.pad': 2.,
 }
 
 png = mpl_backend in ('png', 'PNG')
@@ -21,7 +26,7 @@ pgf_output_pdf = True
 pgf_default_figsize = (mpl_fig_pgf_width, mpl_fig_pgf_width * mpl_fig_ratio)
 pgf_default_params = {
   'font.size': 8,
-  'font.family': 'cmr10',               # lmodern
+  # 'font.family': 'cmr10',               # lmodern
   'text.usetex': True,
   'axes.linewidth': .5,
   'axes.unicode_minus': True,           # fix mpl bug in 3.3.0?
@@ -35,7 +40,11 @@ pgf_default_params = {
     r"\usepackage[T1]{fontenc}",
     r"\usepackage{amssymb}",
     r"\usepackage{relsize}",
-  ])
+    r"\usepackage{u8chars}",
+  ]),
+  # 'axes.labelsize': 'small',
+  # 'xtick.labelsize': 'x-small',
+  # 'ytick.labelsize': 'x-small',
 }
 
 # ---
@@ -85,36 +94,56 @@ subplots = _def (plt.subplots)
 
 # import tikzplotlib
 
-def show (fig = None, outdir: OutputDir = None, basefilename = None, **kwds):
+def show (fig = None, outdir = None, basefilename = None,
+          subplots_adjust_args = {}, **kwds):
   if plt:
+    fig = fig or plt.gcf ()
+    if not fig.get_constrained_layout ():
+      plt.tight_layout (**{**dict(pad = 0, w_pad = 0.1, h_pad = 0.1),
+                           **kwds})
+      if fig._suptitle is not None:
+        subplots_adjust_args = subplots_adjust_args.copy () or {}
+        subplots_adjust_args['top'] = 0.92
+      if subplots_adjust_args != {}:
+        fig.subplots_adjust (**subplots_adjust_args)
+    else:
+      fig.set_constrained_layout_pads(**{**dict(w_pad = 0.01, h_pad = 0.01,
+                                                hspace=0., wspace=0.),
+                                         **kwds})
     if not pgf and not png:
       plt.show ()
-    elif fig is not None and basefilename is not None:
-      if not fig.get_constrained_layout ():
-        plt.tight_layout (**{**dict(pad = 0, w_pad = 0.1, h_pad = 0.1),
-                             **kwds})
-      else:
-        fig.set_constrained_layout_pads(**{**dict(w_pad = 0.01, h_pad = 0.01,
-                                                  hspace=0., wspace=0.),
-                                           **kwds})
-      outdir = OutputDir () if outdir is None else outdir
-      # assert isinstance (outdir, OutputDir)
+    elif basefilename is not None:
+      outdir = tempfile.gettempdir () if outdir is None else str (outdir)
       if png:
-        f = outdir.filepath (basefilename + '.png')
-        tp1 ('Outputting {}...'.format (f))
+        f = os.path.join (outdir, basefilename + '.png')
+        print ('Outputting {}...'.format (f))
         fig.savefig (f, format='png')
       if pgf and pgf_output_pgf:
-        f = outdir.filepath (basefilename + '.pgf')
-        tp1 ('Outputting {}...'.format (f))
+        f = os.path.join (outdir, basefilename + '.pgf')
+        print ('Outputting {}...'.format (f))
         fig.savefig (f, format='pgf')
       if pgf and pgf_output_pdf:
-        f = outdir.filepath (basefilename + '.pdf')
-        tp1 ('Outputting {}...'.format (f))
+        f = os.path.join (outdir, basefilename + '.pdf')
+        print ('Outputting {}...'.format (f))
         fig.savefig (f, format='pdf')
 
+def _esc (s):
+  return s.replace ('_', r'\_').replace ('%', r'\%').replace ('#', r'\#')
+
 def texttt (s):
-  s = s.replace('_', r'\_')
-  return (r'\mbox{\smaller\ttfamily ' + s + '}' if pgf else s)
+  return r'\mbox{\smaller\ttfamily ' + _esc (s)  + '}' if pgf else s
+
+def textsc (s):
+  return r'\textsc{' + _esc (s) + '}' if pgf else s.upper ()
+
+def text (s):
+  if pgf:
+    return _esc (s)
+  return s
+
+def norm (p):
+  import numpy as np
+  return r'L_{' + (r'\infty' if p == np.inf else str (int (p))) + r'}'
 
 # # Verbatim copy from: https://jwalton.info/Matplotlib-latex-PGF/
 # def set_size(width_pt, fraction=1, subplots=(1, 1)):

@@ -1,3 +1,4 @@
+import gc
 import joblib                   # for saving abstraction pipelines
 import builtins
 from . import plotting
@@ -17,10 +18,12 @@ from sklearn.preprocessing import StandardScaler, KBinsDiscretizer, Binarizer
 from sklearn.model_selection import ShuffleSplit
 from sklearn.decomposition import PCA, IncrementalPCA, FastICA
 from sklearn.metrics import log_loss, classification_report
-from pomegranate import Node, BayesianNetwork
+from pomegranate import Node, BayesianNetwork, GeneralMixtureModel as GMM
 from pomegranate.distributions import (DiscreteDistribution,
                                        ConditionalProbabilityTable,
-                                       JointProbabilityTable)
+                                       JointProbabilityTable,
+                                       IndependentComponentsDistribution,
+                                       MultivariateGaussianDistribution)
 
 class AutoRBFKernelPCA_ (AutoRBFKernelPCA):
 
@@ -213,13 +216,26 @@ def _parse_dimred_str (s):
 
 
 def _parse_dimred_specs (s):
-  aliases = {'rbf-kpca': 'rbf_kpca'}
+  aliases = {
+    'rbf-kpca': 'rbf_kpca',
+    'ica|lda': 'ica_lda',
+    'saturate': 'softmax_saturate',
+    'id': 'passthrough',
+    'none': 'passthrough',
+  }
   def _parse_positive_int_or_float_ratio_or_mle (s):
     return s if s == 'mle' else parse_positive_int_or_float_ratio (s)
+  def _parse_no_args (s):
+    if s == '': return s
+    else: raise ValueError (s)
   ap = dict (pca = _parse_positive_int_or_float_ratio_or_mle,
              rbf_kpca = parse_positive_int,
              ica = parse_positive_int,
-             lda = parse_positive_int)
+             lda = parse_positive_int,
+             ica_lda = parse_positive_int,
+             scaler = _parse_no_args,
+             passthrough = _parse_no_args,
+             softmax_saturate = _parse_no_args)
   acc = ()
   for tech, arg in _parse_dimred_str (s):
     t = aliases[tech] if tech in aliases else tech
@@ -275,34 +291,44 @@ def parse_dimred_specs (test_object, dimred_specs):
 
 dimred_specs_doc = """
   specification of dimensionality reduction techniques, in the
-  form of a pair or triple `<first>:<middle>[:<last>]', where each
-  <_> denotes a call `<reduction technique> [ (<args>) ]', e.g.,
- `pca', `ica(2)', or `pca(mle)'.
+  form of a colon-separated pair or triple
+  `<first>:<middle>[:<last>]' where each <_> denotes a call
+  `<reduction technique> [ (<args>) ]' (e.g., `pca', `ica(2)',
+  or `pca(mle)') respectively pertaining to the considered first
+  layer, any number of middle layers, and the last layer.
 
-  If <middle> is empty then it is replaced with the specification 
+  If <middle> is empty then it is replaced with the specification
   for the first layer, e.g., `pca(10)::pca(mle)' is equivalent to
   `pca(10):pca(10):pca(mle)'.
 
-  If <last> is not given (as in `pca(.5)' or `pca:ica(2)'), then 
+  If <last> is not given (as in `pca(.5)' or `pca:ica(2)'), then
   it is `pca(mle)' by default.
 """
 
 # ---
 
-
-class FAbstraction:
+class FAbstraction (ParameterizableObject):
 
   def __init__(self,
                flayers: Union[Sequence[FLayer], Mapping[Any, FLayer]],
                *args,
-               feat_extr_train_size = 1,
-               print_classification_reports = True,
-               score_layer_likelihoods = False,
-               report_on_feature_extractions = None,
-               close_reports_on_feature_extractions = None,
-               outdir: OutputDir = None,
                **kwds):
     super ().__init__(*args, **kwds)
+    self.flayers_ = flayers
+    p1 ('Abstracted layers: ' + ', '.join (self.flayer_names))
+    # self.set_params (**kwds, rebounce = False)
+
+
+  @abstractmethod
+  def set_params (self,
+                  feat_extr_train_size = 1,
+                  print_classification_reports = True,
+                  score_layer_likelihoods = False,
+                  report_on_feature_extractions = None,
+                  close_reports_on_feature_extractions = None,
+                  # train_on_correctly_classified_only = False,
+                  outdir: OutputDir = None,
+                  **kwds):
     assert (print_classification_reports is None or isinstance (print_classification_reports, bool))
     assert (report_on_feature_extractions is None or callable (report_on_feature_extractions))
     assert (close_reports_on_feature_extractions is None or callable (close_reports_on_feature_extractions))
@@ -313,9 +339,7 @@ class FAbstraction:
     self.report_on_feature_extractions = report_on_feature_extractions
     self.close_reports_on_feature_extractions = close_reports_on_feature_extractions
     # self.train_on_correctly_classified_only = train_on_correctly_classified_only
-    self.flayers_ = flayers
     self.outdir = outdir or OutputDir ()
-    p1 ('Abstracted layers: ' + ', '.join (self.flayer_names))
 
 
   def reset (self):
@@ -335,6 +359,15 @@ class FAbstraction:
   def get_flayer (self, x) -> FLayer:
     return self.flayers_[x]
 
+  @property
+  def num_features (self) -> Sequence[int]:
+    return tuple (fl.num_features for fl in self.flayers)
+
+  @property
+  def ordered_features (self) -> Sequence[Tuple[FLayer, int]]:
+    return tuple ((fl, i) for fl in self.flayers for i in range (fl.num_features))
+
+  # ---
 
   def dump_abstraction (self, pathname = None, outdir = None, base = 'abstraction'):
     if pathname is None:
@@ -363,6 +396,10 @@ class FAbstraction:
 
   # ---
 
+  @abstractmethod
+  def transform_activations (self, acts, **_):
+    return self.dimred_activations (acts, **_)
+
 
   def dimred_activations (self, acts, fls = None, **kwds):
     acc = None
@@ -371,16 +408,10 @@ class FAbstraction:
     return acc
 
 
-  @property
-  def num_features (self) -> Sequence[int]:
-    return [ fl.num_features for fl in self.flayers ]
-
-
   # ---
 
 
   def initialize (self, acts, true_labels = None, pred_labels = None,
-                  fit_with_training_data: bool = False,
                   fl_init_callback = None,
                   **kwds):
     """
@@ -530,17 +561,6 @@ class FAbstraction:
 # ---
 
 
-# Whether to enable logs to the console of progress towards target
-# intervals:
-_log_test_selection_level = 2
-_log_progress_level = 3
-_log_interval_distance_level = 2
-_log_feature_marginals_level = 3
-_log_all_feature_marginals_level = 4
-
-# ---
-
-
 Interval = Tuple[Optional[float], Optional[float]]
 
 def interval_dist (interval: Interval, v: Union[float, np.array]):
@@ -590,6 +610,9 @@ class FeatureDiscretizer:
     return dict ()
 
 
+# ---
+
+
 class FeatureBinarizer (FeatureDiscretizer, Binarizer):
 
   def feature_parts (self, _feature):
@@ -612,6 +635,9 @@ class FeatureBinarizer (FeatureDiscretizer, Binarizer):
   @property
   def n_bins_ (self):
     return np.full (len (self.threshold), 2, dtype = int)
+
+
+# ---
 
 
 class KBinsFeatureDiscretizer (FeatureDiscretizer, KBinsDiscretizer):
@@ -823,13 +849,11 @@ class KBinsNOutFeatureDiscretizer (KBinsFeatureDiscretizer):
     return p
 
 
+
 # ---
 
 
-class BFcLayer (FLayer):
-  """
-  Base class for layers to be covered by BN-based criteria.
-  """
+class DiscreteFLayer (FLayer):
 
   def __init__(self,
                discretization: FeatureDiscretizer = None,
@@ -891,8 +915,147 @@ class BFcLayer (FLayer):
     return acc
 
 
+class DiscreteFAbstraction (FAbstraction):
+
+  def __init__(self, flayers: Sequence[DiscreteFLayer], *_, **__):
+    assert all (isinstance (f, DiscreteFLayer) for f in flayers)
+    super ().__init__ (flayers, *_, **__)
+
+
+  # ---
+
+  @classmethod
+  def from_file (cls,
+                 filename,
+                 dnn = None,
+                 outdir: OutputDir = None):
+    self = cls.__new__(cls)
+    np1 (f'Loading discrete abstraction from `{filename}\'... ')
+    flayers = joblib.load (filename)
+    c1 ('done')
+    if isinstance (flayers, Sequence):
+      self.flayers_ = [ DiscreteFLayer.from_abstraction_info (dnn = dnn, **fl)
+                        for fl in flayers ]
+    else:
+      self.flayers_ = { k: DiscreteFLayer.from_abstraction_info (dnn = dnn, **flayers[k])
+                        for k in flayers }
+    self.outdir = outdir or OutputDir ()
+    return self
+
+  # ---
+
+  @abstractmethod
+  def transform_activations (self, acts, **_):
+    return self.dimred_n_discretize_activations (acts, **_)
+
+
+  def dimred_n_discretize_activations (self, acts, fls = None):
+    acc = None
+    for fl in self.flayers if fls is None else fls:
+      acc = fl.dimred_n_discretize_activations (acts, acc = acc)
+    return acc
+
+
+  @property
+  def num_feature_parts (self) -> Sequence[Sequence[int]]:
+    return [ fl.num_feature_parts for fl in self.flayers ]
+
+
+  # ---
+
+
+  def initialize (self, acts, true_labels = None, pred_labels = None,
+                  fit_with_training_data: bool = False,
+                  **kwds):
+
+    def discr_callback (fl, x_ok, y_ok, ok_labels, ko_labels, ok_idxs):
+      # Fit discretizer parameters:
+      p1 ('| Discretizing features for layer {}... '.format (fl))
+      ts0 = np.count_nonzero (ok_idxs)
+      fit_wrt_args = {}
+      x_ko, y_ko = [], []
+      if len (ko_labels) > 0:
+        x_ko = facts[~ok_idxs].reshape (len (ok_idxs) - ts0, -1)
+        y_ko = fl.transform.transform (x_ko)
+        fit_wrt_args = dict (y2plot = y_ko[:,fl.focus],
+                             y2plot_labels = ko_labels)
+
+      tp1 ('Discretizing features...')
+
+      fl.discr.fit_wrt (x_ok[:,fl.focus],
+                        y_ok[:,fl.focus],
+                        fl.transform,
+                        layer = fl,
+                        **kwds,
+                        true_labels = ok_labels,
+                        outdir = self.outdir,
+                        **fit_wrt_args)
+
+      for fi in range (fl.num_features):
+        p1 ('| Discretization of feature {} involves {} interval{}'
+            .format (fi, *s_(fl.discr.feature_parts (fi))))
+      p1 ('| Discretized {} feature{}'.format (*s_(fl.num_features)))
+      del x_ko, y_ko
+
+    super ().initialize (acts,
+                         true_labels = true_labels,
+                         pred_labels = pred_labels,
+                         fit_with_training_data = fit_with_training_data,
+                         fl_init_callback = discr_callback,
+                         **kwds)
+
+    # if self.learn_model:
+    #   facts = self.dimred_n_discretize_activations (acts)
+    #   lml = min (len (facts), int (self.learn_model_train_ratio * len (facts)))
+    #   self._learn_model (facts[:lml])
+    # else:
+    #   self._create_model ()
+
+    # # Dump the abstraction if needed
+    # if self.dump_abstraction_:
+    #   self.dump_abstraction ()
+
+    # # Last, fit the Bayesian Network with given training activations
+    # # for now, for the purpose of preliminary assessments; the BN will
+    # # be re-initialized upon the first call to `add_new_test_cases`:
+    # if not self.learn_model and \
+    #    (fit_with_training_data or self._score_with_training_data ()):
+    #   np1 ('| Fitting probabilistic model with training dataset... ')
+    #   # XXX: just use all provided training data for now:
+    #   ok_idxs = np.full (len (true_labels), True, dtype = bool)
+    #   # TODO: means to customize this:
+    #   batch_size = 1000
+    #   for i in range (0, len (true_labels), batch_size):
+    #     imax = min (i + batch_size, len (true_labels))
+    #     imsk = ok_idxs[i:imax]
+    #     self.fit_activations ({ layer: acts[layer][i:imax][imsk]
+    #                             for layer in acts })
+    #   c1 ('done')
+
+
 # ---
 
+
+# Whether to enable logs to the console of progress towards target
+# intervals:
+_log_test_selection_level = 2
+_log_progress_level = 3
+_log_interval_distance_level = 2
+_log_feature_marginals_level = 3
+_log_all_feature_marginals_level = 4
+
+
+# ---
+
+
+class BFcLayer (DiscreteFLayer):
+  """
+  Base class for layers to be covered by BN-based criteria.
+  """
+  pass
+
+
+# ---
 
 
 def bayes_node_name(fl, idx):
@@ -953,35 +1116,158 @@ class DiscretizedHiddenFeatureNode (DiscretizedFeatureNode):
 
 # ---
 
-class BNAbstraction (FAbstraction):
+class ProbabilisticAbstraction (FAbstraction):
 
-  def __init__(self,
-               flayers: Sequence[BFcLayer],
-               *args,
-               bn_abstr_n_jobs = None,
-               assess_discretized_feature_probas = False,
-               dump_abstraction = True,
-               **kwds):
-    super ().__init__(flayers, *args, **kwds)
-    self.bn_abstr_n_jobs = bn_abstr_n_jobs
+  def __init__(self, flayers: Sequence[FLayer], *_, **__):
+               # learn_model = False,
+               # learn_model_train_ratio = .1,
+    super ().__init__(flayers, *_, **__)
+    # self.set_params (**kwds, rebounce = False)
+    # self.learn_model = learn_model
+    # self.learn_model_train_ratio = learn_model_train_ratio
+    self.fit_dataset_size = 0   # as modeled in BN
+
+
+  @abstractmethod
+  def set_params (self,
+                  bn_abstr_n_jobs = None,
+                  assess_discretized_feature_probas = False,
+                  dump_abstraction = True,
+                  **kwds):
+    super ().set_params (**kwds)
+    self.bn_abstr_n_jobs = some (bn_abstr_n_jobs, 1)
     self.assess_discretized_feature_probas = assess_discretized_feature_probas
     self.dump_abstraction_ = dump_abstraction
-    self.fit_dataset_size = 0   # as modeled in BN
+    self.N = None
+
+
+  @property
+  def M (self):
+    return self.N
 
 
   def reset (self):
     super ().reset ()
-    self.reset_bn ()
+    self.reset_model ()
 
 
-  def reset_bn (self):
-    # Next call to fit_activations will reset the BN's probabilities
+  def reset_model (self):
     self.fit_dataset_size = 0
+
+
+  @abstractmethod
+  def dump_model (self, *_):
+    raise NotImplementedError
+
+
+  def dump_abstraction (self, pathname = None, outdir = None,
+                        base = 'probabilistic-abstraction'):
+    super ().dump_abstraction (pathname = pathname,
+                               outdir = outdir,
+                               base = base)
+
+  # ---
+
+  def _n_jobs (self, n_jobs = None, **_):
+    return int (some (n_jobs, some (self.bn_abstr_n_jobs, 1)))
+
+  def _fit (self, facts, **_):
+    nbase = self.fit_dataset_size
+    self.fit_dataset_size += len (facts)
+    if self.M is not None:
+      self.M.fit (facts,
+                  inertia = nbase / self.fit_dataset_size,
+                  n_jobs = self._n_jobs (**_))
+    else:
+      self.N = self._learn_model (facts, **_)
+
+  def log_probability (self, facts, **_):
+    return self.M.log_probability (facts, n_jobs = self._n_jobs (**_))
+
+  def probability (self, *_, **__):
+    return np.exp (self.log_probability (*_, **__))
+
+  # ---
+
+  def fit_activations (self, acts, **_):
+    self._fit (self.transform_activations (acts), **_)
+
+  def activations_probas (self, acts, **_):
+    return self.probability (self.transform_activations (acts), **_)
+
+  # ---
+
+  def initialize (self, acts,
+                  create_model: bool = True,
+                  fit_with_training_data: bool = False,
+                  # learn_model = False,
+                  # learn_model_train_ratio = .1,
+                  **kwds):
+    super ().initialize (acts, **kwds)
+
+    # if learn_model:
+    #   facts = self.transform_activations (acts)
+    #   lml = min (len (facts), int (learn_model_train_ratio * len (facts)))
+    #   self._learn_model (facts[:lml])
+    # else:
+    if create_model:
+      self._create_model ()
+
+      # Dump the abstraction if needed
+      if self.dump_abstraction_:
+        self.dump_abstraction ()
+
+    # Last, fit the Bayesian Network with given training activations
+    # for now, for the purpose of preliminary assessments; the BN will
+    # be re-initialized upon the first call to `add_new_test_cases`:
+    if fit_with_training_data or self._score_with_training_data ():
+      np1 ('| Fitting probabilistic model with training dataset... ')
+      # XXX: just use all provided training data for now:
+      ok_idxs = np.full (len (true_labels), True, dtype = bool)
+      # TODO: means to customize this:
+      batch_size = 1000
+      for i in range (0, len (true_labels), batch_size):
+        imax = min (i + batch_size, len (true_labels))
+        imsk = ok_idxs[i:imax]
+        self.fit_activations ({ layer: acts[layer][i:imax][imsk]
+                                for layer in acts })
+      c1 ('done')
+
+  # ---
+
+  def _setup_estimate_feature_probas (self, truth):
+    ytest = truth if truth.dtype == float else np.array (truth, dtype = float)
+    ftest = ytest.copy ()
+    def estimate_feature_probas (feature, nbfeats):
+      ftest[..., feature : feature + nbfeats] = np.nan
+      probas = np.array (self.M.predict_proba (ftest, n_jobs = self.bn_abstr_n_jobs))
+      ftest[..., feature : feature + nbfeats] = truth[..., feature : feature + nbfeats]
+      lprobas = probas[..., feature : feature + nbfeats]
+      del probas
+      return lprobas
+    return estimate_feature_probas
+
+
+# ---
+
+
+class BNAbstraction (DiscreteFAbstraction, ProbabilisticAbstraction):
+
+
+  @property
+  def M (self):
+    return self.N
+
+
+  def reset_model (self):
+    super ().reset_model ()
+    # Next call to fit_activations will reset the BN's probabilities
     self.N_marginals = None
 
 
-  def dump_bn (self, base, descr):
-    fn = self.outdir.filepath (base, suff = '.yml')
+  def dump_model (self, base, descr, outdir = None):
+    outdir = some (outdir, self.outdir)
+    fn = outdir.filepath (base, suff = '.yml' if not base.endswith ('.yml') else '')
     header = '\n# '.join ((f'# BN fit with {descr}',
                            '',
                            'Reload with:',
@@ -995,7 +1281,16 @@ class BNAbstraction (FAbstraction):
     c1 ('done')
 
 
-  def dump_abstraction (self, pathname = None, outdir = None, base = 'bn-abstraction'):
+  def load_model (self, model_file):
+    np1 (f'Reading BN from `{model_file}\'... ')
+    with open (model_file, mode = 'r') as f:
+      self.N = BayesianNetwork.from_yaml (f.reaf ())
+    self.N_marginals = None
+    c1 ('done')
+
+
+  def dump_abstraction (self, pathname = None, outdir = None,
+                        base = 'bn-abstraction'):
     super ().dump_abstraction (pathname = pathname,
                                outdir = outdir,
                                base = base)
@@ -1007,56 +1302,48 @@ class BNAbstraction (FAbstraction):
                  filename,
                  outdir: OutputDir = None,
                  bn_abstr_n_jobs = None,
+                 create_model = False,
                  log = True):
     self = cls.__new__(cls)
     np1 (f'Loading abstraction from `{filename}\'... ')
     flayers = joblib.load (filename)
     c1 ('done')
-    self.flayers = [ BFcLayer.from_abstraction_info (dnn, **fl)
-                     for fl in flayers ]
+    assert isinstance (flayers, Sequence)
+    self.flayers_ = [ BFcLayer.from_abstraction_info (dnn = dnn, **fl)
+                      for fl in flayers ]
     self.bn_abstr_n_jobs = bn_abstr_n_jobs
     self.outdir = outdir or OutputDir ()
     self.fit_dataset_size = 0
-    self.N = self._create_bayesian_network (log = log)
+    self.N = None
+    if create_model:
+      self.N = self._create_bayesian_network (log = log)
     self.N_marginals = None
     return self
 
 
-  # ---
-
-
-  def dimred_n_discretize_activations (self, acts, fls = None):
-    acc = None
-    for fl in self.flayers if fls is None else fls:
-      acc = fl.dimred_n_discretize_activations (acts, acc = acc)
-    return acc
-
-
-  @property
-  def num_feature_parts (self) -> Sequence[Sequence[int]]:
-    return [ fl.num_feature_parts for fl in self.flayers ]
-
-
-  # ---
-
-
-  def fit_activations (self, acts):
-    facts = self.dimred_n_discretize_activations (acts)
-    nbase = self.fit_dataset_size
-    self.fit_dataset_size += len (facts)
-    self.N.fit (facts,
-                inertia = nbase / self.fit_dataset_size,
-                n_jobs = int (some (self.bn_abstr_n_jobs, 1)))
+  @classmethod
+  def from_discrete_abstraction (cls, a: DiscreteFAbstraction,
+                                 # dnn = None,
+                                 # outdir: OutputDir = None,
+                                 # bn_abstr_n_jobs = None,
+                                 create_model = False,
+                                 log = True,
+                                 **kwds):
+    assert isinstance (a, DiscreteFAbstraction)
+    self = cls.__new__(cls)
+    self.flayers_ = a.flayers_  # copy?
+    self.set_params (**kwds)
+    self.fit_dataset_size = 0
+    self.N = None
+    if create_model:
+      self.N = self._create_bayesian_network (log = log)
     self.N_marginals = None
-    del facts
+    return self
 
 
-  def activations_probas (self, acts):
-    facts = self.dimred_n_discretize_activations (acts)
-    log_probs = self.N.log_probability \
-      (facts, n_jobs = int (some (self.bn_abstr_n_jobs, 1)))
-    del facts
-    return np.exp (log_probs)
+  def fit_activations (self, acts, **_):
+    super ().fit_activations (acts, **_)
+    self.N_marginals = None
 
 
   # ---
@@ -1127,84 +1414,28 @@ class BNAbstraction (FAbstraction):
            Coverage (covered = 1)
     return bfdc * self.bfc_coverage ().as_prop if multiply_with_bfc else bfdc
 
-
   # ---
-
-
-  def initialize (self, acts, true_labels = None, pred_labels = None,
-                  fit_with_training_data: bool = False,
-                  **kwds):
-    """
-    Called through :meth:`stat_based_train_cv_initializers` above.
-    """
-
-    def discr_callback (fl, x_ok, y_ok, ok_labels, ko_labels, ok_idxs):
-      # Fit discretizer parameters:
-      p1 ('| Discretizing features for layer {}... '.format (fl))
-      ts0 = np.count_nonzero (ok_idxs)
-      fit_wrt_args = {}
-      x_ko, y_ko = [], []
-      if len (ko_labels) > 0:
-        x_ko = facts[~ok_idxs].reshape (len (ok_idxs) - ts0, -1)
-        y_ko = fl.transform.transform (x_ko)
-        fit_wrt_args = dict (y2plot = y_ko[:,fl.focus],
-                             y2plot_labels = ko_labels)
-
-      tp1 ('Discretizing features...')
-
-      fl.discr.fit_wrt (x_ok[:,fl.focus],
-                        y_ok[:,fl.focus],
-                        fl.transform,
-                        layer = fl,
-                        **kwds,
-                        true_labels = ok_labels,
-                        outdir = self.outdir,
-                        **fit_wrt_args)
-
-      for fi in range (fl.num_features):
-        p1 ('| Discretization of feature {} involves {} interval{}'
-            .format (fi, *s_(fl.discr.feature_parts (fi))))
-      p1 ('| Discretized {} feature{}'.format (*s_(fl.num_features)))
-      del x_ko, y_ko
-
-    super ().initialize (acts,
-                         true_labels = true_labels,
-                         pred_labels = pred_labels,
-                         fit_with_training_data = fit_with_training_data,
-                         fl_init_callback = discr_callback,
-                         **kwds)
-
-    # Second, contruct the Bayesian Network
-    self.N = self._create_bayesian_network ()
-    self.N_marginals = None
-
-    # Dump the abstraction if needed
-    if self.dump_abstraction_:
-      self.dump_abstraction ()
-
-    # Last, fit the Bayesian Network with given training activations
-    # for now, for the purpose of preliminary assessments; the BN will
-    # be re-initialized upon the first call to `add_new_test_cases`:
-    if fit_with_training_data or self._score_with_training_data ():
-      np1 ('| Fitting BN with training dataset... ')
-      # XXX: just use all provided training data for now:
-      ok_idxs = np.full (len (true_labels), True, dtype = bool)
-      # TODO: means to customize this:
-      batch_size = 1000
-      for i in range (0, len (true_labels), batch_size):
-        imax = min (i + batch_size, len (true_labels))
-        imsk = ok_idxs[i:imax]
-        self.fit_activations ({ layer: acts[layer][i:imax][imsk]
-                                for layer in acts })
-      c1 ('done')
-
 
   def _score_with_training_data (self) -> bool:
     return super ()._score_with_training_data () \
       or self.assess_discretized_feature_probas
 
-
   # ---
+
+  def _learn_model (self, facts, log = True, **_):
+    tp1 ('| Creating Bayesian Network...')
+    self.N = BayesianNetwork.from_samples (facts, name = 'BN Abstraction',
+                                           n_jobs = self._n_jobs (**_))
+    if log:
+      p1 ('| Created Bayesian Network of {} nodes and {} edges.'
+          .format (self.N.node_count (), self.N.edge_count ()))
+    self.N_marginals = None
+
+
+  def _create_model (self):
+    # Second, contruct the Bayesian Network
+    self.N = self._create_bayesian_network ()
+    self.N_marginals = None
 
 
   def _create_bayesian_network (self, log = True):
@@ -1212,7 +1443,6 @@ class BNAbstraction (FAbstraction):
     Actual BN instantiation.
     """
 
-    import gc
     nc = sum (f.num_features for f in self.flayers)
     max_ec = sum (f.num_features * g.num_features
                   for f, g in zip (self.flayers[:-1], self.flayers[1:]))
@@ -1322,19 +1552,6 @@ class BNAbstraction (FAbstraction):
     del features_probas
 
 
-  def _setup_estimate_feature_probas (self, truth):
-    ytest = truth if truth.dtype == float else np.array (truth, dtype = float)
-    ftest = ytest.copy ()
-    def estimate_feature_probas (feature, nbfeats):
-      ftest[..., feature : feature + nbfeats] = np.nan
-      probas = np.array (self.N.predict_proba (ftest, n_jobs = self.bn_abstr_n_jobs))
-      ftest[..., feature : feature + nbfeats] = truth[..., feature : feature + nbfeats]
-      lprobas = probas[..., feature : feature + nbfeats]
-      del probas
-      return lprobas
-    return (lambda feature, nbfeats: estimate_feature_probas (feature, nbfeats))
-
-
   def _prediction_probas (self, p):
     return [ p.parameters[0][i] for i in range (len (p.parameters[0])) ]
 
@@ -1342,6 +1559,82 @@ class BNAbstraction (FAbstraction):
   def _all_prediction_probas (self, fprobas):
     return [ self._prediction_probas (p) for p in fprobas ]
 
+
+
+# ----
+
+
+class GMMAbstraction (# Discrete
+                      ProbabilisticAbstraction):
+
+  def __init__(self, *args, **kwds):
+    super ().__init__(*args, **kwds, learn_model = True)
+
+
+  @property
+  def M (self):
+    return self.gmm
+
+
+  # def dump_model (self, base, descr):
+  #   fn = self.outdir.filepath (base, suff = '.yml')
+  #   header = '\n# '.join ((f'# BN fit with {descr}',
+  #                          '',
+  #                          'Reload with:',
+  #                          f"  with open ('{base}.yml', mode = 'r') as f:",
+  #                          "    N = pomegranate.BayesianNetwork.from_yaml (f.read ())",
+  #                          '\n'))
+  #   extra = dict (dataset_size = self.fit_dataset_size,
+  #                 params = self.get_params (True))
+  #   np1 (f'Outputting BN fit with {descr} in `{fn}\'... ')
+  #   write_in_file (fn, header, self.N.to_yaml (), yaml.dump (extra))
+  #   c1 ('done')
+
+
+  def dump_abstraction (self, pathname = None, outdir = None,
+                        base = 'gmm-abstraction'):
+    super ().dump_abstraction (pathname = pathname,
+                               outdir = outdir,
+                               base = base)
+
+
+  # @classmethod
+  # def from_file (cls,
+  #                filename,
+  #                dnn = None,
+  #                outdir: OutputDir = None,
+  #                bn_abstr_n_jobs = None,
+  #                log = True):
+  #   self = cls.__new__(cls)
+  #   np1 (f'Loading abstraction from `{filename}\'... ')
+  #   flayers = joblib.load (filename)
+  #   c1 ('done')
+  #   assert isinstance (flayers, Sequence)
+  #   self.flayers = [ BFcLayer.from_abstraction_info (dnn = dnn, **fl)
+  #                    for fl in flayers ]
+  #   self.bn_abstr_n_jobs = bn_abstr_n_jobs
+  #   self.outdir = outdir or OutputDir ()
+  #   self.fit_dataset_size = 0
+  #   self.N = self._create_bayesian_network (log = log)
+  #   self.N_marginals = None
+  #   return self
+
+
+  # ---
+
+  def _learn_model (self, facts, log = True):
+    tp1 ('| Creating Generalized Mixture Model...')
+    n_components = facts.shape[1]
+    print (len (facts))
+    print (facts[0])
+    # distrs = [DiscreteDistribution] * n_components
+    # distrs = [ConditionalProbabilityTable] * n_components
+    # print (self.bn_abstr_n_jobs or 1)
+    self.gmm = GMM.from_samples (MultivariateGaussianDistribution,
+                                 n_components, facts,
+                                 n_jobs = self.bn_abstr_n_jobs or 1)
+    if log:
+      p1 ('| Created Generalized Mixture Model.')
 
 
 # ----
@@ -1410,12 +1703,12 @@ class _BaseBFcCriterion (Criterion):
 
   def terminate (self):
     if self.dump_bn_with_final_dataset_distribution:
-      self.BN.dump_bn ('bn4tests', 'generated dataset')
+      self.BN.dump_model ('bn4tests', 'generated dataset')
 
 
   def reset (self):
     super ().reset ()
-    self.BN.reset_bn ()
+    self.BN.reset_model ()
     self._reset_progress ()
 
 
@@ -1449,9 +1742,9 @@ class _BaseBFcCriterion (Criterion):
       except KeyError: pass
 
 
-  def fit_activations (self, acts):
+  def fit_activations (self, acts, **_):
     self._log_discr_level ('| Old')
-    self.BN.fit_activations (acts)
+    self.BN.fit_activations (acts, **_)
     self._log_discr_level ('| New')
     self._log_feature_marginals = None
 
@@ -1511,9 +1804,9 @@ class _BaseBFcCriterion (Criterion):
                         **kwds)
 
     if self.dump_bn_with_trained_dataset_distribution:
-      self.BN.dump_bn ('bn4trained', 'training dataset')
+      self.BN.dump_model ('bn4trained', 'training dataset')
       if not self.BN._score_with_training_data ():
-        self.BN.reset_bn ()
+        self.BN.reset_model ()
 
     self._finalize_initialization ()
 
@@ -1531,7 +1824,7 @@ class _BaseBFcCriterion (Criterion):
 
   def _score (self, acts, **kwds):
     self.BN._score (acts, **kwds)
-    self.BN.reset_bn ()
+    self.BN.reset_model ()
     self.base_dimreds = None
 
 
@@ -1991,8 +2284,15 @@ def layer_feature_discretization (l, li, discr = None, discr_n_jobs = None):
     return cstr (**discr_args)
 
 
+def flayer_setup (l, i, feats = None, **kwds):
+  options = layer_transform_options (i, feats, default = None)
+  fext, skip, focus = layer_transform (l, i, options)
+  return FLayer (layer = l, layer_index = i,
+                 transform = fext,
+                 skip = skip,
+                 focus = focus)
 
-def layer_setup (l, i, feats = None, discr = None, **kwds):
+def discr_layer_setup (l, i, feats = None, discr = None, **kwds):
   options = layer_transform_options (i, feats, default = None)
   if options is None:
     options = layer_transform_options_from_discr (i, discr)
@@ -2098,7 +2398,7 @@ def setup (setup_criterion = None,
 
   if bn_abstr is None:
     setup_layer = lambda l, i, **kwds: \
-      layer_setup (l, i, feats, discr, discr_n_jobs = discr_n_jobs)
+      discr_layer_setup (l, i, feats, discr, discr_n_jobs = discr_n_jobs)
     cover_layers = get_cover_layers (test_object.dnn, setup_layer,
                                      layer_indices = test_object.layer_indices,
                                      activation_of_conv_or_dense_only = False,

@@ -1,6 +1,7 @@
 import argparse
-from .utils_funcs import some
-from .utils_io import dir_or_file_in_dir, p1
+import traceback
+from .utils_funcs import some, rng_seed
+from .utils_io import sys, dir_or_file_in_dir, p1
 
 # ---
 
@@ -60,5 +61,49 @@ def pp_abstraction_arg (posname = 'abstraction'):
 
 abstraction_path = \
   dir_or_file_in_dir ('abstraction.pkl', '.pkl')
+
+# ---
+
+def pp_rng_seed (args):
+  """Initialize RNG, with given seed if `args` namespace includes an
+  `rng_seed` entry.
+
+  """
+  try:
+    if 'rng_seed' in args:
+      rng_seed (args.rng_seed)
+      del args.rng_seed
+    else:
+      rng_seed (None)
+  except ValueError as e:
+    sys.exit (f'Invalid argument given for \`--rng-seed\': {e}')
+
+def run_func (func,
+              args = None,
+              parser = None,
+              pp_args = (pp_rng_seed,),
+              get_anonargs = ()):
+  assert parser is not None
+  try:
+    args = parser.parse_args () if args is None else args
+    for pp in pp_args: pp (args)
+    func (*(get (args) for get in get_anonargs), **vars (args))
+  except ValueError as e:
+    traceback.print_tb (e.__traceback__)
+    sys.exit (f'Error: {e}')
+  except FileNotFoundError as e:
+    sys.exit (f'Error: {e}')
+  except KeyboardInterrupt:
+    sys.exit ('Interrupted.')
+
+def dispatch_cmd (parser = None, **_):
+  def dispatch (*_, cmd = None, **__):
+    if cmd is not None:
+      assert callable (cmd)
+      cmd (*_, **__)
+    else:
+      parser.print_help ()
+      sys.exit (1)
+  run_func (dispatch, parser = parser, **_)
 
 # ---
