@@ -370,7 +370,7 @@ ap.set_defaults (cmd = plot_dists)
 # ---
 
 _defaults = {
-  'techs': ('pca', 'ica'),
+  'techs': ('pca', 'ica', 'rbf_kpca',),
   'nfeats': (3,),
   'discr_strategies': ('uniform', 'quantile'),
   'num_intervals': (5, 10,),

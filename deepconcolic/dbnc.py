@@ -153,13 +153,16 @@ def layer_transform_options (li, feats = None, default = 1):
 
 
 def layer_transform (l, i, options):
-  decomp = 'pca'
+  dimred = 'pca'
   skip, focus = None, None
   if isinstance (options, dict):
     options = dict (options)
-    if 'decomp' in options:
-      decomp = options['decomp']
+    if 'decomp' in options:     # TODO: deprecated warning
+      dimred = options['decomp']
       del options['decomp']
+    if 'dimred' in options:
+      dimred = options['dimred']
+      del options['dimred']
     if 'skip' in options:
       skip = options['skip']
       del options['skip']
@@ -167,7 +170,7 @@ def layer_transform (l, i, options):
       focus = options['focus']
       del options['focus']
   elif (isinstance (options, (int, float)) or options == 'mle') and \
-           decomp == 'pca':
+           dimred == 'pca':
     options = dict (n_components = options,
                     svd_solver = ('arpack' if isinstance (options, int) else
                                   'full' if isinstance (options, float) else 'auto'))
@@ -177,11 +180,11 @@ def layer_transform (l, i, options):
     options['n_components'] = min (np.prod (l.output.shape[1:]) - 1,
                                    options['n_components'])
   fext = (make_pipeline (StandardScaler (copy = False),
-                         PCA (**options, copy = False)) if decomp == 'pca' else \
+                         PCA (**options, copy = False)) if dimred == 'pca' else \
           make_pipeline (StandardScaler (copy = False),
-                         IncrementalPCA (**options, copy = False)) if decomp == 'ipca' else \
+                         IncrementalPCA (**options, copy = False)) if dimred == 'ipca' else \
           make_pipeline (StandardScaler (copy = False),
-                         AutoRBFKernelPCA_(**options)) if decomp in ('kpca', 'rbf_kpca') else \
+                         AutoRBFKernelPCA_(**options)) if dimred in ('kpca', 'rbf_kpca') else \
           make_pipeline (FastICA (**options)))
   return fext, skip, focus
 
@@ -217,6 +220,7 @@ def _parse_dimred_str (s):
 
 def _parse_dimred_specs (s):
   aliases = {
+    'kpca': 'rbf_kpca',
     'rbf-kpca': 'rbf_kpca',
     'ica|lda': 'ica_lda',
     'saturate': 'softmax_saturate',
@@ -229,6 +233,7 @@ def _parse_dimred_specs (s):
     if s == '': return s
     else: raise ValueError (s)
   ap = dict (pca = _parse_positive_int_or_float_ratio_or_mle,
+             sparse_pca = parse_positive_int,
              rbf_kpca = parse_positive_int,
              ica = parse_positive_int,
              lda = parse_positive_int,
@@ -277,7 +282,7 @@ def parse_dimred_specs (test_object, dimred_specs):
   def spec_dict (spec):
     tech = spec[0]
     args = spec[1:]
-    res = dict (decomp = tech,
+    res = dict (dimred = tech,
                 n_components = args[0] if args != () else None)
     if tech in ('ica',):
       res.update (max_iter = 10000)
