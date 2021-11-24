@@ -258,6 +258,8 @@ class raw_datat:
     self.labels = appopt (np.squeeze, as_numpy (labels))
     self.name = name
 
+  def __len__(self):
+    return len (self.data)
 
 class fix_image_channels_:
   def __init__(self, up = 255., bounds = (0.0, 255.0), ctype = 'uint8', down = 255.):
@@ -514,6 +516,7 @@ def print_adversarial_distribution(advs, fname, int_flag=False):
 
 # ---
 
+# TODO: rename `pass_kwds' into `pass_labels'.
 def lazy_activations_on_indexed_data (fnc, dnn, data: raw_datat,
                                       indexes, layer_indexes, *_,
                                       pass_kwds = True, **__):

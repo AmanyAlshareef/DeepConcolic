@@ -1184,7 +1184,7 @@ class ProbabilisticAbstraction (FAbstraction):
                   inertia = nbase / self.fit_dataset_size,
                   n_jobs = self._n_jobs (**_))
     else:
-      self.N = self._learn_model (facts, **_)
+      self._learn_model (facts, **_)
 
   def log_probability (self, facts, **_):
     return self.M.log_probability (facts, n_jobs = self._n_jobs (**_))
@@ -1353,6 +1353,94 @@ class BNAbstraction (DiscreteFAbstraction, ProbabilisticAbstraction):
 
   # ---
 
+  
+  def _learn_model (self, facts, log = True, **_):
+    tp1 ('| Creating Bayesian Network...')
+
+    import networkx as nx
+    G = nx.DiGraph ()
+    flidx, prev_fidxs = 0, None
+    for fl in self.flayers:
+      nidxs = tuple (flidx + fi for fi in fl.range_features ())
+      G.add_node (nidxs)
+      if prev_fidxs is not None:
+        G.add_edge (prev_fidxs, nidxs)
+      prev_fidxs = nidxs
+      flidx += len (nidxs)
+    # print (list (G.edges ()))
+
+    self.N = BayesianNetwork.from_samples (facts, name = 'BN Abstraction',
+                                           pseudocount = 1.,
+                                           algorithm = 'exact',
+                                           constraint_graph = G,
+                                           n_jobs = self._n_jobs (**_))
+    if log:
+      p1 ('| Created Bayesian Network of {} nodes and {} edges.'
+          .format (self.N.node_count (), self.N.edge_count ()))
+    self.N_marginals = None
+
+
+  def _create_model (self):
+    # Second, contruct the Bayesian Network
+    self.N = self._create_bayesian_network ()
+    self.N_marginals = None
+
+
+  def _create_bayesian_network (self, log = True):
+    """
+    Actual BN instantiation.
+    """
+
+    nc = sum (f.num_features for f in self.flayers)
+    max_ec = sum (f.num_features * g.num_features
+                  for f, g in zip (self.flayers[:-1], self.flayers[1:]))
+
+    tp1 ('| Creating Bayesian Network of {} nodes and a maximum of {} edges...'
+         .format (nc, max_ec))
+    N = BayesianNetwork (name = 'BN Abstraction')
+
+    gc.collect ()
+    prev_nodes = None
+    for fl in self.flayers:
+      nodes = [ (DiscretizedHiddenFeatureNode (fl, feature, prev_nodes)
+                 if prev_nodes is not None else
+                 DiscretizedInputFeatureNode (fl, feature))
+                for feature in range (fl.num_features) ]
+      N.add_nodes (*nodes)
+
+      if prev_nodes is not None:
+        for n in nodes:
+          for pn in n.prev_nodes_:
+            N.add_edge (pn, n)
+      tp1 ('| Creating Bayesian Network: {}/{} nodes, {}/{} edges done...'
+           .format (N.node_count (), nc, N.edge_count (), max_ec))
+
+      del prev_nodes
+      gc.collect ()
+      prev_nodes = nodes
+
+    del prev_nodes
+    gc.collect ()
+    ec = N.edge_count ()
+    tp1 ('| Creating Bayesian Network of {} nodes and {} edges: baking...'
+         .format (nc, ec))
+    N.bake ()
+    if log:
+      p1 ('| Created Bayesian Network of {} nodes and {} edges.'
+          .format (nc, ec))
+    return N
+
+  # ---
+
+  def get_params (self, deep = True):
+    p = super ().get_params (deep = deep)
+    p['node_count'] = self.N.node_count ()
+    p['edge_count'] = self.N.edge_count (),
+    return p
+
+
+  # ---
+
 
   def _marginals (self):
     if self.N_marginals is None:
@@ -1424,76 +1512,6 @@ class BNAbstraction (DiscreteFAbstraction, ProbabilisticAbstraction):
   def _score_with_training_data (self) -> bool:
     return super ()._score_with_training_data () \
       or self.assess_discretized_feature_probas
-
-  # ---
-
-  def _learn_model (self, facts, log = True, **_):
-    tp1 ('| Creating Bayesian Network...')
-    self.N = BayesianNetwork.from_samples (facts, name = 'BN Abstraction',
-                                           n_jobs = self._n_jobs (**_))
-    if log:
-      p1 ('| Created Bayesian Network of {} nodes and {} edges.'
-          .format (self.N.node_count (), self.N.edge_count ()))
-    self.N_marginals = None
-
-
-  def _create_model (self):
-    # Second, contruct the Bayesian Network
-    self.N = self._create_bayesian_network ()
-    self.N_marginals = None
-
-
-  def _create_bayesian_network (self, log = True):
-    """
-    Actual BN instantiation.
-    """
-
-    nc = sum (f.num_features for f in self.flayers)
-    max_ec = sum (f.num_features * g.num_features
-                  for f, g in zip (self.flayers[:-1], self.flayers[1:]))
-
-    tp1 ('| Creating Bayesian Network of {} nodes and a maximum of {} edges...'
-         .format (nc, max_ec))
-    N = BayesianNetwork (name = 'BN Abstraction')
-
-    gc.collect ()
-    prev_nodes = None
-    for fl in self.flayers:
-      nodes = [ (DiscretizedHiddenFeatureNode (fl, feature, prev_nodes)
-                 if prev_nodes is not None else
-                 DiscretizedInputFeatureNode (fl, feature))
-                for feature in range (fl.num_features) ]
-      N.add_nodes (*(n for n in nodes))
-
-      if prev_nodes is not None:
-        for n in nodes:
-          for pn in n.prev_nodes_:
-            N.add_edge (pn, n)
-      tp1 ('| Creating Bayesian Network: {}/{} nodes, {}/{} edges done...'
-           .format (N.node_count (), nc, N.edge_count (), max_ec))
-
-      del prev_nodes
-      gc.collect ()
-      prev_nodes = nodes
-
-    del prev_nodes
-    gc.collect ()
-    ec = N.edge_count ()
-    tp1 ('| Creating Bayesian Network of {} nodes and {} edges: baking...'
-         .format (nc, ec))
-    N.bake ()
-    if log:
-      p1 ('| Created Bayesian Network of {} nodes and {} edges.'
-          .format (nc, ec))
-    return N
-
-  # ---
-
-  def get_params (self, deep = True):
-    p = super ().get_params (deep = deep)
-    p['node_count'] = self.N.node_count ()
-    p['edge_count'] = self.N.edge_count (),
-    return p
 
   # ---
 
@@ -1627,17 +1645,17 @@ class GMMAbstraction (# Discrete
 
   # ---
 
-  def _learn_model (self, facts, log = True):
+  def _learn_model (self, facts, log = True, **_):
     tp1 ('| Creating Generalized Mixture Model...')
     n_components = facts.shape[1]
-    print (len (facts))
-    print (facts[0])
+    # print (len (facts))
+    # print (facts[0])
     # distrs = [DiscreteDistribution] * n_components
     # distrs = [ConditionalProbabilityTable] * n_components
     # print (self.bn_abstr_n_jobs or 1)
     self.gmm = GMM.from_samples (MultivariateGaussianDistribution,
                                  n_components, facts,
-                                 n_jobs = self.bn_abstr_n_jobs or 1)
+                                 n_jobs = self._n_jobs (**_))
     if log:
       p1 ('| Created Generalized Mixture Model.')
 

@@ -90,8 +90,11 @@ def rng_seed (seed: Optional[int]):
   # In case one also uses pythons' stdlib ?
   random.seed (seed)
 
-def randint ():
-  return int (np.random.uniform (2**32-1))
+def randint (rng = None):
+  if rng is None:
+    return int (np.random.uniform (2**32-1))
+  else:
+    return rng.integers (2**32-1)
 
 
 # ---

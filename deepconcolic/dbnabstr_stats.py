@@ -370,15 +370,29 @@ ap.set_defaults (cmd = plot_dists)
 # ---
 
 _defaults = {
-  'techs': ('pca', 'ica', 'rbf_kpca',),
+  'techs': ('pca', 'ica'# , 'rbf_kpca'
+            ,),
   'nfeats': (3,),
   'discr_strategies': ('uniform', 'quantile'),
   'num_intervals': (5, 10,),
-  'extended': (False, True),
+  'extended': (False,),
   'train_size': 20000,          # for layer-wise abstraction only
   'iters': 10,
   'nlayers': (3,),
+  'learn_structure': (True,),
+  'learn_structure_ratio': (1.,),
 }
+
+_abstr_keys = (
+  'nlayers',
+  'techs',
+  'nfeats',
+  'discr_strategies',
+  'num_intervals',
+  'extended',
+  'learn_structure',
+  'learn_structure_ratio',
+)
 
 all_tests = [                   # hardcoded test for now;
   {
@@ -392,15 +406,6 @@ all_tests = [                   # hardcoded test for now;
     'layers': ('max_pooling2d_1', 'max_pooling2d_2', 'activation_5'),
   },
 ]
-
-_abstr_keys = (
-  'nlayers',
-  'techs',
-  'nfeats',
-  'discr_strategies',
-  'num_intervals',
-  'extended',
-)
 
 ap = subparsers.add_parser ('basic-dists')
 ap.add_argument ('--iters', '-N', type = int, default = 10)
@@ -422,7 +427,8 @@ def basic_dists (iters = 10, jobs = 1, dry_run = False, repeats = 1, num_workers
 
     def dotest (test_object, abstr_info, pid = 0):
       from .dbnabstr import create, perturb_features_
-      nlayers, tech, nfeats, discr_strategy, num_intervals, extended = abstr_info
+      nlayers, tech, nfeats, discr_strategy, num_intervals, extended, \
+        learn_structure, learn_structure_ratio = abstr_info
 
       all_flat = None
       with olock:
@@ -436,7 +442,10 @@ def basic_dists (iters = 10, jobs = 1, dry_run = False, repeats = 1, num_workers
                        (all_flat['nfeats'] == nfeats) &
                        (all_flat['discr_strategies'] == discr_strategy) &
                        (all_flat['num_intervals'] == num_intervals) &
-                       (all_flat['extended'] == extended)]) >= repeats:
+                       (all_flat['extended'] == extended) &
+                       (all_flat['learn_structure'] == learn_structure) &
+                       (all_flat['learn_structure_ratio'] == learn_structure_ratio)]\
+              ) >= repeats:
         p1 (f'Skipping {str (abstr_info)}')
         return True
 
@@ -461,7 +470,9 @@ def basic_dists (iters = 10, jobs = 1, dry_run = False, repeats = 1, num_workers
       for _ in range (repeats):
         P = perturb_features_ (test_object.dnn, test_object.train_data,
                                abstr, return_dict = True,
-                               iters = iters, jobs = jobs)
+                               iters = iters, jobs = jobs,
+                               learn_model_structure = learn_structure,
+                               learn_model_structure_train_ratio = learn_structure_ratio)
 
         def assign_keys (dists):
           for k, i in zip (_abstr_keys + ('model', 'dataset'),
@@ -592,8 +603,9 @@ ap.set_defaults (cmd = gen_attacks)
 ap = subparsers.add_parser ('attack-dists')
 ap.add_argument ('--jobs', '-j', type = int, default = 5)
 ap.add_argument ('--dry-run', '-n', action = 'store_true')
+ap.add_argument ('--experiments-id', '-expid', dest = 'expid', default = 'learnt')
 
-def attack_dists (jobs = 1, dry_run = False, repeats = 1, num_workers = 4):
+def attack_dists (jobs = 1, dry_run = False, repeats = 1, num_workers = 4, expid = 'dists'):
 
   dtsuffs = ['a', 'b', 'c', 'd', 'e']
 
@@ -603,21 +615,15 @@ def attack_dists (jobs = 1, dry_run = False, repeats = 1, num_workers = 4):
     dataset, model = get ('dataset'), get ('model')
     layers, train_size = get ('layers'), get ('train_size')
 
-    # if not os.path.exists (f'{dataset}{dtsuff}.npz') and not dry_run:
-    #   gen_attacks (dtsuff)
-
-    # if not os.path.exists (f'{dataset}{dtsuff}.npz'):
-    #   continue
-
     h1 (f'Considering {model}')
     olock = InterProcessLock ('.lock')
 
     def dotest (test_object, attacks, abstr_info, pid = 0):
       from .dbnabstr import create, attack_
-      nlayers, tech, nfeats, discr_strategy, num_intervals, extended = abstr_info
+      nlayers, tech, nfeats, discr_strategy, num_intervals, extended, \
+        learn_structure, learn_structure_ratio = abstr_info
 
-      allf = f'{dataset}_dists.pkl'
-      hhf = f'{dataset}_hhdists.pkl'
+      allf = f'{dataset}_{expid}.pkl'
 
       all_flat = None
       with olock:
@@ -632,7 +638,10 @@ def attack_dists (jobs = 1, dry_run = False, repeats = 1, num_workers = 4):
                             (all_flat['nfeats'] == nfeats) &
                             (all_flat['discr_strategies'] == discr_strategy) &
                             (all_flat['num_intervals'] == num_intervals) &
-                            (all_flat['extended'] == extended)]) >= repeats
+                            (all_flat['extended'] == extended) &
+                            (all_flat['learn_structure'] == learn_structure) &
+                            (all_flat['learn_structure_ratio'] == learn_structure_ratio)]\
+                   ) >= repeats
               for dtsuff in dtsuffs):
         p1 (f'Skipping {str (abstr_info)}')
         return True
@@ -657,7 +666,9 @@ def attack_dists (jobs = 1, dry_run = False, repeats = 1, num_workers = 4):
 
       for _ in range (repeats):
         Ps = attack_ (test_object.dnn, test_object.train_data, test_object.raw_data,
-                      abstr, attacks, return_dict = True, jobs = jobs)
+                      abstr, attacks, return_dict = True, jobs = jobs,
+                      learn_model_structure = learn_structure,
+                      learn_model_structure_train_ratio = learn_structure_ratio)
 
         def assign_keys (dists, dtsuff):
           for k, i in zip (_abstr_keys + ('model', 'dataset', 'dtsuff'),
@@ -665,17 +676,13 @@ def attack_dists (jobs = 1, dry_run = False, repeats = 1, num_workers = 4):
             dists = dists.assign (**{ k: i }).set_index (k, append = True)
           return dists
 
-        dists, hhdists = None, None
+        dists = None
         for P, dtsuff in zip (Ps, dtsuffs):
           Pf = from_dict (P, name = 'attack')
 
           dists_ = compute_dists (*Pf, name = 'attack')
           dists_ = assign_keys (dists_, dtsuff)
           dists = dists_ if dists is None else dists.append (dists_)
-
-          hhdists_ = compute_half_half_dists (*Pf, name = 'attack')
-          hhdists_ = assign_keys (hhdists_, dtsuff)
-          hhdists = hhdists_ if hhdists is None else hhdists.append (hhdists_)
 
         os.chdir ('..')
         os.rmdir (f'./{pid}')
@@ -685,12 +692,6 @@ def attack_dists (jobs = 1, dry_run = False, repeats = 1, num_workers = 4):
           all_dists = read_pkl_ (allf) if os.path.exists (allf) else None
           all_dists = dists if all_dists is None else all_dists.append (dists)
           all_dists.to_pickle (allf)
-
-          # Only valid if "symmetric" vector of reference inputs (e.g
-          # X_test repeated once).
-          all_hhdists = read_pkl_ (hhf) if os.path.exists (hhf) else None
-          all_hhdists = hhdists if all_hhdists is None else all_hhdists.append (hhdists)
-          all_hhdists.to_pickle (hhf)
       return True
 
     def make_worker (model, dataset, dtsuffs, **__):
@@ -799,30 +800,13 @@ def plot_attack_dists (pkl_inputs = None, outdir = None, prefix = None):
   for pkl_input in pkl_inputs:
     dists = read_pkl (pkl_input, extra_ids = ('dtsuff', 'attack',))
     print (dists)
-    # print (dists.index)
-    # print (dists.columns)
-    # dists = dists.pivot (index = [s for s in dists.columns if s not in ('distance', 'dist')],
-    #                      # ('nlayers',
-    #                      #  'feature extraction',
-    #                      #  'nfeats',
-    #                      #  'discr_strategies',
-    #                      #  'num_intervals',
-    #                      #  'extended',
-    #                      #  'discretization',
-    #                      #  'model', 'dataset','dtsuff', 'attack',),
-    #                      columns = 'distance', values = 'dist')
-    # print (dists.columns)
     for dataset in dists.dataset.unique ():
       for i, included_dists in enumerate (included_dists_):
-        # included_dists = tuple (f'd_{{{d}}}' for d in included_dists)
         dt = dists[(dists.dataset == dataset) &
                    (dists.nlayers == 3) &
                    (dists.nfeats == 3) &
                    (dists.num_intervals != 20) &
                    (dists.distance.isin (included_dists))].copy ()
-        # dt = dt.pivot (index = [s for s in dt.columns if s not in ('dist', 'distance')],
-        #                columns = ['distance'],
-        #                values = ['dist'])
         print (', '.join (dt.distance.unique ()))
         dt['distance'] = '$' + dt.distance + '$'
         g = sns.catplot (data = dt, hue = 'discretization',
@@ -835,11 +819,8 @@ def plot_attack_dists (pkl_inputs = None, outdir = None, prefix = None):
                          legend_out = False)
         g.set_titles (template = 'measure $p =$ {row_name} | feat. extr.: {col_name}')
         g.set_xticklabels (rotation = 90)
-        g.set_ylabels (r'$d_p\left(\P{X_{\mathit{test}}\in\mathcal B}, \P{X_{\mathsf{attack}}\in\mathcal B}\right)$')
-        # Some kind of table pivoting beforehand may be better, as
-        # that's a bit hackish:
-        # for ax, d in zip (g.axes[:,0], dt.distance.unique ()):
-        #   ax.set_ylabel (d, rotation = 0)
+        g.set_ylabels (r'$d_p\left(\P{X_{\mathit{test}}\in\mathcal B},'
+                       r'\P{X_{\mathsf{attack}}\in\mathcal B}\right)$')
         show (plt.gcf (),
               outdir = outdir,
               basefilename = f'{prefix}-{dataset}-attack-dists-{i}')
@@ -859,7 +840,6 @@ def plot_attack_summary (pkl_inputs = None, outdir = None, prefix = None):
     dists = dists_ if dists is None else dists.append (dists_)
 
   print (dists)
-  # included_dists = tuple (f'd_{{{d}}}' for d in included_dists)
   for dataset in dists.dataset.unique ():
     dt = dists[(dists.dataset == dataset) &
                (dists.nlayers == 3) &
@@ -880,19 +860,13 @@ def plot_attack_summary (pkl_inputs = None, outdir = None, prefix = None):
                      col = 'attack',
                      **figargs,
                      legend = False)
-    # g.despine (left = True)
     if dataset == 'mnist':
       g.axes[0,3].legend (loc='upper left')
       g.set_xlabels (r'\phantom{feature extraction}')
     g.set_titles (template = '$p =$ {row_name} | {col_name}')
-    # g.set_xticklabels (rotation = 90)
     g.set_ylabels (r'\strut')
-    # g.set_ylabels (r'$d_p\left(\P{X_{\mathit{test}}\in\mathcal B}, \P{X_{\mathsf{attack}}\in\mathcal B}\right)$')
-    # Some kind of table pivoting beforehand may be better, as
-    # that's a bit hackish:
-    # for ax, d in zip (g.axes[:,0], dt.distance.unique ()):
-    #   ax.set_ylabel (d, rotation = 0)
-    g.axes[1,0].set_ylabel (r'$d_p\left(\P{X_{\mathit{test}}\in\mathcal B}, \P{X_{\mathsf{attack}}\in\mathcal B}\right)$')
+    g.axes[1,0].set_ylabel (r'$d_p\left(\P{X_{\mathit{test}}\in\mathcal B},'
+                            r'\P{X_{\mathsf{attack}}\in\mathcal B}\right)$')
     show (plt.gcf (),
           outdir = outdir,
           basefilename = f'{prefix}-{dataset}-attack-summary')

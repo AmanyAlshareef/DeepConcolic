@@ -142,15 +142,12 @@ add_abstraction_arg (ap)
 add_abstraction_args (ap)
 ap.add_argument ('--abstraction-only', action = 'store_true')
 ap.add_argument ('--jobs', '-j', type = int)
-# ap.add_argument ('--learn-model', action = 'store_true')
-# ap.add_argument ('--learn-model-train-ratio', type = float)
 
+# TODO: learn structure after initialization.
 def create (test_object,
             train_size = None,
             abstraction = None,
             abstraction_only = False,
-            learn_model = False,
-            learn_model_train_ratio = .2,
             jobs = 1,
             dump_abstraction = True,
             return_abstraction = False,
@@ -162,8 +159,6 @@ def create (test_object,
     abstr = DiscreteFAbstraction (clayers)
   else:
     abstr = BNAbstraction (clayers, dump_abstraction = False,
-                           # learn_model = learn_model,
-                           # learn_model_train_ratio = learn_model_train_ratio,
                            bn_abstr_n_jobs = jobs)
   lazy_activations_on_indexed_data \
     (abstr.initialize, test_object.dnn, test_object.train_data,
@@ -251,16 +246,19 @@ ap.add_argument ('--iters', '-N', type = int, default = 1)
 ap.add_argument ('--jobs', '-j', type = int, default = 5)
 
 def perturb_features_ (dnn, data, abstr,
-                       learn_model = False,
-                       learn_model_train_ratio = .1,
+                       from_discrete_abstraction = BNAbstraction.from_discrete_abstraction,
+                       learn_model_structure = False,
+                       learn_model_structure_train_ratio = .1,
                        return_dict = False,
                        idxs = slice (None),
                        iters = 1,
                        jobs = -1,
                        rng = None):
   rng = rng or np.random.default_rng (randint ())
-  abstr = BNAbstraction.from_discrete_abstraction \
-    (abstr, create_model = not learn_model)
+  # First call to `_fit|fit_activations', creates the model if
+  # `create_model' holds:
+  abstr = from_discrete_abstraction \
+    (abstr, create_model = not learn_model_structure)
 
   p1 (f'Projecting the training dataset...')
   x_ref = lazy_activations_on_indexed_data \
@@ -268,31 +266,26 @@ def perturb_features_ (dnn, data, abstr,
      layer_indexes = [ fl.layer_index for fl in abstr.flayers ],
      pass_kwds = False)
 
-  if learn_model:
+  train_idxs = slice (None)
+  if learn_model_structure:
     p1 (f'Learning abstract model structure...')
-    lml = min (len (x_ref), int (learn_model_train_ratio * len (x_ref)))
-    abstr._fit (x_ref[:lml], n_jobs = jobs)
+    learn_idxs = \
+      rng.choice (len (x_ref),
+                  min (len (x_ref),
+                       int (learn_model_structure_train_ratio * len (x_ref))),
+                  replace = False)
+    abstr._fit (x_ref[learn_idxs], n_jobs = jobs)
+    train_idxs = np.ones (len (x_ref), dtype = bool)
+    train_idxs[learn_idxs] = False
+    if not np.any (train_idxs):
+      train_idxs = None
 
-  p1 (f'Fitting the abstract model...')
-  abstr._fit (x_ref, n_jobs = jobs)
+  if train_idxs is not None:
+    p1 (f'Fitting the abstract model...')
+    abstr._fit (x_ref[train_idxs], n_jobs = jobs)
 
   p1 (f'Computing reference probabilities...')
   P = dict (none = abstr.probability (x_ref, n_jobs = jobs))
-
-  # def perturb (fi, fl, f):
-  #   p_prime = np.asarray ([])
-  #   for _n in range (iters):
-  #     tp1 (f'Perturbing feature {f} of layer {fl} (iteration {_n+1}/{iters})...')
-  #     x_prime = random_shift_feature (x_ref, fi, fl, f, rng = rng)
-  #     p_prime = np.append (p_prime, abstr.probability (x_prime, n_jobs = 1))
-  #     del x
-  #   p1 (f'Feature {f} of layer {fl} done.')
-  #   return fl, f, p_prime
-  # for fl, f, p_prime in \
-  #     Parallel (n_jobs = jobs) \
-  #     (delayed (perturb) (fi, fl, f)
-  #      for fi, (fl, f) in enumerate (abstr.ordered_features)):
-  #   P[(fl, f)] = p_prime
 
   for fi, (fl, f) in enumerate (abstr.ordered_features):
     p_prime = np.asarray ([])
@@ -315,67 +308,71 @@ def perturb_features (test_object,
                       iters = 1,
                       jobs = -1,
                       **_):
-  # if abstr is None:
   abstr = DiscreteFAbstraction.from_file (abstraction_path (abstraction),
                                           dnn = test_object.dnn)
   return perturb_features_ (test_object.dnn, test_object.train_data,
                             abstr, iters = iters, jobs = jobs)
-
-  # if return_dict:
-  #   P['none'] = np.tile (P['none'], iters)
-  #   return P
-  # abstr = BNAbstraction.from_discrete_abstraction (abstr, create_model = True)
-
-  # p1 (f'Projecting the training dataset...')
-  # x_ref = lazy_activations_on_indexed_data \
-  #   (abstr.transform_activations, test_object.dnn,
-  #    test_object.train_data, slice (1000),
-  #    layer_indexes = [ fl.layer_index for fl in abstr.flayers ],
-  #    pass_kwds = False)
-
-  # p1 (f'Fitting the abstract model...')
-  # abstr._fit (x_ref, n_jobs = jobs)
-
-  # p1 (f'Computing reference probabilities...')
-  # P = dict (none = abstr.probability (x_ref, n_jobs = jobs))
-
-  # for fi, (fl, f) in enumerate (abstr.ordered_features):
-  #   p_prime = np.asarray ([])
-  #   for _n in range (iters):
-  #     tp1 (f'Perturbing feature {f} of layer {fl} (iteration {_n+1}/{iters})...')
-  #     x = random_shift_feature (x_ref, fi, fl, f, rng = rng)
-  #     p_prime = np.append (p_prime, abstr.probability (x, n_jobs = jobs))
-  #     del x
-  #   p1 (f'Feature {f} of layer {fl} done.')
-  #   P[(str (fl), f)] = p_prime
-
-  # if return_dict:
-  #   P['none'] = np.tile (P['none'], iters)
-  #   return P
 
 ap.set_defaults (cmd = perturb_features)
 
 # ---
 
 def attack_ (dnn, train_data, ref_data, abstr, attacks,
-             learn_model = False,
+             from_discrete_abstraction = BNAbstraction.from_discrete_abstraction,
+             learn_model_structure = False,
+             learn_model_structure_train_ratio = .1,
              return_dict = False,
              idxs = slice (None),
              jobs = -1,
              rng = None):
   rng = rng or np.random.default_rng (randint ())
-  abstr = BNAbstraction.from_discrete_abstraction \
-    (abstr, create_model = not learn_model)
+  # First call to `_fit|fit_activations', creates the model if
+  # `create_model' holds:
+  abstr = from_discrete_abstraction \
+    (abstr, create_model = not learn_model_structure)
 
-  p1 (f'Fitting the abstract model...')
-  lazy_activations_on_indexed_data \
-    (abstr.fit_activations, dnn, train_data.data, slice (None),
-     layer_indexes = [ fl.layer_index for fl in abstr.flayers ],
-     pass_kwds = False)
+  train_idxs = slice (None)
+  if learn_model_structure:
+    p1 (f'Learning abstract model structure...')
+    # from sklearn.model_selection import train_test_split
+    # learn_idxs, train_idxs = \
+    #   train_test_split (train_idxs,
+    #                     train_size = min (len (train_data),
+    #                                       int (learn_model_structure_train_ratio * len (train_data))),
+    #                     random_state = randint (rng))
+    learn_idxs = \
+      rng.choice (len (train_data),
+                  min (len (train_data),
+                       int (learn_model_structure_train_ratio * len (train_data))),
+                  replace = False)
+    # print (type (train_data.data))
+    # print (np.asarray(learn_idxs).shape)
+    # print (np.asarray(learn_idxs).squeeze ().shape)
+    # learn_idxs = np.zeros (len (train_data), dtype = bool)
+    # learn_mask \
+    #   [rng.choice (len (train_data),
+    #                min (len (train_data),
+    #                     int (learn_model_structure_train_ratio * len (train_data))),
+    #                replace = False)] = True
+    lazy_activations_on_indexed_data \
+      (abstr.fit_activations, dnn, train_data, learn_idxs,
+       layer_indexes = [ fl.layer_index for fl in abstr.flayers ],
+       pass_kwds = False)
+    train_idxs = np.ones (len (train_data), dtype = bool)
+    train_idxs[learn_idxs] = False
+    if not np.any (train_idxs):
+      train_idxs = None
+
+  if train_idxs is not None:
+    p1 (f'Fitting the abstract model...')
+    lazy_activations_on_indexed_data \
+      (abstr.fit_activations, dnn, train_data, train_idxs,
+       layer_indexes = [ fl.layer_index for fl in abstr.flayers ],
+       pass_kwds = False)
 
   p1 (f'Projecting the reference dataset...')
   x_ref = lazy_activations_on_indexed_data \
-    (abstr.transform_activations, dnn, ref_data.data, idxs,
+    (abstr.transform_activations, dnn, ref_data, idxs,
      layer_indexes = [ fl.layer_index for fl in abstr.flayers ],
      pass_kwds = False)
 
@@ -404,8 +401,6 @@ ap_check = subparsers.add_parser ('check')
 add_abstraction_arg (ap_check)
 ap_check.add_argument ('--train-size', '-ts', type = int,
                        help = 'train dataset size (default is all)')
-# ap_check.add_argument ('--trained-bn', metavar = 'YML',
-#                        help = 'BN fit with training data (.yml)')
 ap_check.add_argument ('--size', '-s', dest = 'test_size',
                        type = int, default = 100,
                        help = 'test dataset size (default is 100)')
