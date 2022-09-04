@@ -188,8 +188,8 @@ ap_create.add_argument ('--discr-strategy', '-ds',
 ap_create.add_argument ('--extended-discr', '-xd', action = 'store_true',
                         help = 'use extended partitions')
 
-# python3 -m deepconcolic.dbnabstr_infer --dataset mnist --model saved_models/mnist_complicated.h5 create outs/bnInfer.pkl --feature-extraction pca --num-features 3 --num-intervals 5 --layers max_pooling2d_1 max_pooling2d_2 activation_5 --outputs outs
-# python3 -m deepconcolic.dbnabstr_infer --dataset cifar10 --model saved_models/cifar10_complicated.h5 create outs/bnInfer.pkl --feature-extraction pca --num-features 3 --num-intervals 5 --layers max_pooling2d_1 max_pooling2d_2 activation_5 --outputs outs
+# To run inference: python3 -m deepconcolic.dbnabstr_infer --dataset mnist --model saved_models/mnist_complicated.h5 create outs/bnInfer.pkl --feature-extraction pca --num-features 3 --num-intervals 5 --layers max_pooling2d_1 max_pooling2d_2 activation_5 --outputs outs
+# To run inference: python3 -m deepconcolic.dbnabstr_infer --dataset cifar10 --model saved_models/cifar10_complicated.h5 create outs/bnInfer.pkl --feature-extraction pca --num-features 3 --num-intervals 5 --layers max_pooling2d_1 max_pooling2d_2 activation_5 --outputs outs
 
 def create (test_object,
             dataset =  None,
