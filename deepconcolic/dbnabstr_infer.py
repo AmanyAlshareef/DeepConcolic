@@ -83,7 +83,7 @@ def BN_prediction(test_object, bn_abstr, adv_data = None):
 
   true_labels = test_object.raw_data.labels[indexes]
 
-  #To delet
+  #To delete
   true_labels = true_labels.reshape(len(test_object.raw_data.labels), 1) 
   final_data = np.concatenate([obs_vals, true_labels], axis = 1)
   none_data = final_data.copy().astype(object)
@@ -278,7 +278,8 @@ def create (test_object,
   from keras.utils import to_categorical
   y_test = to_categorical(y_test)
 
-  print(f'| Evaluating the DNN and BN prediction accuracy with {(num_features*len(layers))} BN nodes and {num_intervals} intervals each, on {dataset} dataset ({len (x_test)} samples): ')
+  print(f'| Evaluating the DNN and BN prediction accuracy with {(num_features*len(layers))} \
+  BN nodes and {num_intervals} intervals each, on {dataset} dataset ({len (x_test)} samples): ')
   # Evaluate the DNN classifier on the test set
   loss, acc = test_object.dnn.evaluate(x_test, y_test, verbose=1)
   NN_accuracy = 100.0 * acc
