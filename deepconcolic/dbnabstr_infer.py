@@ -236,8 +236,8 @@ def create (test_object,
 
   BN_distributions = []
   for state in bn_abstr.N.states:
-    #if state.name in BNlast_layer_nodes:  
-    BN_distributions.append(state.distribution)
+    if state.name in BNlast_layer_nodes:  
+       BN_distributions.append(state.distribution)
 
   # Transform the new input taken from test dataset to evidences/observations
   rng = np.random.default_rng (randint ())
@@ -256,13 +256,13 @@ def create (test_object,
   #np.save("final_data_s.npy", final_data)
 
   #Calculate the prediction node's CPT and add it into the BN 
-  label_dist = ConditionalProbabilityTable.from_samples(final_data, BN_distributions)
+  label_dist = ConditionalProbabilityTable.from_samples(final_data[:, -num_features-1:], BN_distributions)
   label_node = Node(label_dist, name = "prediction")
   bn_abstr.N.add_node(label_node)
   #print(label_dist.to_dict()["table"])
   
   for state in bn_abstr.N.states:
-    if state.name not in ["prediction"]:  #in BNlast_layer_nodes:
+    if state.name in BNlast_layer_nodes: #not in ["prediction"]:  #Consider all BN distribution
       bn_abstr.N.add_edge(state, label_node)
 
   np1('| Fitting BN with prediction node data... ')
